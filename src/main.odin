@@ -3,52 +3,51 @@ package main
 import "core:fmt"
 import "core:strings"
 
-import SDL       "vendor:sdl2"
-import SDL_Image "vendor:sdl2/image"
-import SDL_Mixer "vendor:sdl2/mixer"
-import SDL_Net   "vendor:sdl2/net"
-import GL        "vendor:OpenGL"
+import SDL "vendor:sdl2"
+import Img "vendor:sdl2/image"
+import Mix "vendor:sdl2/mixer"
+import Net "vendor:sdl2/net"
+import GL  "vendor:OpenGL"
 
-SDL_SUCCESS :: 0
- INIT_FLAGS :: SDL.INIT_VIDEO     | SDL.INIT_AUDIO
-MIXER_FLAGS :: SDL_Mixer.INIT_OGG | SDL_Mixer.INIT_MP3
-IMAGE_FLAGS :: SDL_Image.INIT_PNG
-
+SDL_SUCCESS      :: 0
+SDL_INIT_FLAGS   :: SDL.INIT_VIDEO | SDL.INIT_AUDIO
+MIX_INIT_FLAGS   :: Mix.INIT_OGG   | Mix.INIT_MP3
+IMG_INIT_FLAGS   :: Img.INIT_PNG
 GL_MAJOR_VERSION :: 3
 GL_MINOR_VERSION :: 3
 
 main :: proc() {
-    if SDL.Init(INIT_FLAGS) != SDL_SUCCESS {
+    if SDL.Init(SDL_INIT_FLAGS) != SDL_SUCCESS {
         fmt.println("Failed to initialise SDL:")
         fmt.println(SDL.GetError())
     } else {
         defer SDL.Quit()
 
-        if SDL_Image.Init(IMAGE_FLAGS) != IMAGE_FLAGS  {
+        if Img.Init(IMG_INIT_FLAGS) != IMG_INIT_FLAGS  {
             fmt.println("Failed to initialise SDL_Image:")
             fmt.println(SDL.GetError())
         } else {
-            defer SDL_Image.Quit()
+            defer Img.Quit()
 
-            if SDL_Mixer.Init(MIXER_FLAGS) != i32(MIXER_FLAGS) {
+            if Mix.Init(MIX_INIT_FLAGS) != i32(MIX_INIT_FLAGS) {
                 fmt.println("Failed to initialise SDL_Mixer:")
                 fmt.println(SDL.GetError())
             } else {
-                defer SDL_Mixer.Quit()
+                defer Mix.Quit()
 
-                SDL_Mixer.OpenAudio(
-                    SDL_Mixer.DEFAULT_FREQUENCY,
-                    SDL_Mixer.DEFAULT_FORMAT,
-                    SDL_Mixer.DEFAULT_CHANNELS,
+                Mix.OpenAudio(
+                    Mix.DEFAULT_FREQUENCY,
+                    Mix.DEFAULT_FORMAT,
+                    Mix.DEFAULT_CHANNELS,
                     2048,
                 )
-                defer SDL_Mixer.CloseAudio()
+                defer Mix.CloseAudio()
 
-                if SDL_Net.Init() != 0 {
+                if Net.Init() != 0 {
                     fmt.println("Failed to initialise SDL_Net:")
-                    fmt.println(SDL_Net.GetError())
+                    fmt.println(Net.GetError())
                 } else {
-                    defer SDL_Net.Quit()
+                    defer Net.Quit()
 
                     name := get_name()
                     defer delete(name)
@@ -85,18 +84,42 @@ main :: proc() {
                         }
 
                         fmt.println("Hello,", name)
-                        is_close_requested := false
 
-                        for !is_close_requested {
+                        game := Game {
+                            is_running = true,
+                            name       = name,
+                            this_stage = Stage.Title,
+                            next_stage = Stage.Title,
+                        }
+
+                        input  := Input  {}
+                        assets := Assets {}
+
+                                load_assets(&assets)
+                        defer unload_assets(&assets)
+
+                        for game.is_running {
                             event: SDL.Event
 
                             for SDL.PollEvent(&event) {
                                 #partial switch event.type {
                                     case .QUIT: {
-                                        is_close_requested = true
+                                        game.is_running = false
+                                    }
+
+                                    case .KEYDOWN: {
+                                        key := event.key.keysym.sym
+
+                                        if key == .NUM0 { game.next_stage = .Title   }
+                                        if key == .NUM1 { game.next_stage = .Level_1 }
+                                        if key == .NUM2 { game.next_stage = .Level_2 }
+                                        if key == .NUM3 { game.next_stage = .Level_3 }
+                                        if key == .NUM4 { game.next_stage = .Ending  }
                                     }
                                 }
                             }
+
+                            update_and_render(&game, input, assets)
 
                             GL.Clear(GL.COLOR_BUFFER_BIT)
                             SDL.GL_SwapWindow(window)
@@ -105,5 +128,85 @@ main :: proc() {
                 }
             }
         }
+    }
+}
+
+Assets :: struct {
+    title:   ^Mix.Music,
+    level_1: ^Mix.Music,
+    level_2: ^Mix.Music,
+    level_3: ^Mix.Music,
+    ending:  ^Mix.Music,
+}
+
+load_assets :: proc(assets: ^Assets) {
+    assets.title   = Mix.LoadMUS("assets/music/Title Screen.wav")
+    assets.level_1 = Mix.LoadMUS("assets/music/Level 1.wav")
+    assets.level_2 = Mix.LoadMUS("assets/music/Level 2.wav")
+    assets.level_3 = Mix.LoadMUS("assets/music/Level 3.wav")
+    assets.ending  = Mix.LoadMUS("assets/music/Ending.wav")
+}
+
+unload_assets :: proc(assets: ^Assets) {
+    Mix.FreeMusic(assets.title)
+    Mix.FreeMusic(assets.level_1)
+    Mix.FreeMusic(assets.level_2)
+    Mix.FreeMusic(assets.level_3)
+    Mix.FreeMusic(assets.ending)
+}
+
+Stage :: enum {
+    Title,
+    Credits,
+    Level_1,
+    Level_2,
+    Level_3,
+    Ending,
+}
+
+Game :: struct {
+    is_running: bool,
+    name:       cstring,
+    this_stage: Stage,
+    next_stage: Stage,
+}
+
+Input :: struct {
+
+}
+
+music_channel: i32 = 0
+
+play_music :: proc(track: ^Mix.Music) {
+    if Mix.PlayingMusic() == 0 {
+        Mix.PlayMusic(track, 1)
+    }
+}
+
+update_and_render :: proc(game: ^Game, input: Input, assets: Assets) {
+    if game.this_stage != game.next_stage {
+        Mix.FadeOutMusic(150)
+        game.this_stage = game.next_stage
+    }
+
+    switch game.this_stage {
+        case .Title:
+            play_music(assets.title)
+
+        case .Credits:
+            play_music(assets.title)
+            // Music: Juhani Junkala
+
+        case .Level_1:
+            play_music(assets.level_1)
+
+        case .Level_2:
+            play_music(assets.level_2)
+
+        case .Level_3:
+            play_music(assets.level_3)
+
+        case .Ending:
+            play_music(assets.ending)
     }
 }
