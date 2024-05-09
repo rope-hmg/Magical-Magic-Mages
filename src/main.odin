@@ -137,22 +137,29 @@ Assets :: struct {
     level_2: ^Mix.Music,
     level_3: ^Mix.Music,
     ending:  ^Mix.Music,
+    gliphs:  ^SDL.Surface,
 }
 
 load_assets :: proc(assets: ^Assets) {
+    assert(assets != nil)
+
     assets.title   = Mix.LoadMUS("assets/music/Title Screen.wav")
     assets.level_1 = Mix.LoadMUS("assets/music/Level 1.wav")
     assets.level_2 = Mix.LoadMUS("assets/music/Level 2.wav")
     assets.level_3 = Mix.LoadMUS("assets/music/Level 3.wav")
     assets.ending  = Mix.LoadMUS("assets/music/Ending.wav")
+    assets.gliphs  = Img.Load("assets/sprites/gliphs-outlined.png")
 }
 
 unload_assets :: proc(assets: ^Assets) {
+    assert(assets != nil)
+
     Mix.FreeMusic(assets.title)
     Mix.FreeMusic(assets.level_1)
     Mix.FreeMusic(assets.level_2)
     Mix.FreeMusic(assets.level_3)
     Mix.FreeMusic(assets.ending)
+    SDL.FreeSurface(assets.gliphs)
 }
 
 Stage :: enum {
@@ -179,11 +186,13 @@ music_channel: i32 = 0
 
 play_music :: proc(track: ^Mix.Music) {
     if Mix.PlayingMusic() == 0 {
-        Mix.PlayMusic(track, 1)
+        Mix.PlayMusic(track, -1)
     }
 }
 
 update_and_render :: proc(game: ^Game, input: Input, assets: Assets) {
+    assert(game != nil)
+
     if game.this_stage != game.next_stage {
         Mix.FadeOutMusic(150)
         game.this_stage = game.next_stage

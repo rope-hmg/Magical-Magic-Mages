@@ -19,9 +19,9 @@ make
 
 # Story
 
-Level 1: We're Just Getting Started
+Level 1: Some Title That Makes This Level Sound Easy
 Level 2: The Four Generals
-Level 3: The Dark King Igralin
+Level 3: Mage King Igralin
 
 # Current Progress
 
