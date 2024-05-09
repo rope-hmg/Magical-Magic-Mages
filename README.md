@@ -14,7 +14,8 @@ We're also using the following SDL [extension libraries](https://wiki.libsdl.org
 Then you can build and run the game with:
 
 ```sh
-make
+make client
+make server
 ```
 
 # Story
