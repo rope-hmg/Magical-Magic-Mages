@@ -1,4 +1,4 @@
-package main
+package client
 
 import "core:fmt"
 import "core:strings"
@@ -99,30 +99,15 @@ main :: proc() {
                         defer unload_assets(&assets)
 
                         for game.is_running {
-                            event: SDL.Event
-
-                            for SDL.PollEvent(&event) {
-                                #partial switch event.type {
-                                    case .QUIT: {
-                                        game.is_running = false
-                                    }
-
-                                    case .KEYDOWN: {
-                                        key := event.key.keysym.sym
-
-                                        if key == .NUM0 { game.next_stage = .Title   }
-                                        if key == .NUM1 { game.next_stage = .Level_1 }
-                                        if key == .NUM2 { game.next_stage = .Level_2 }
-                                        if key == .NUM3 { game.next_stage = .Level_3 }
-                                        if key == .NUM4 { game.next_stage = .Ending  }
-                                    }
-                                }
-                            }
-
+                            handle_events(&input)
                             update_and_render(&game, input, assets)
 
                             GL.Clear(GL.COLOR_BUFFER_BIT)
                             SDL.GL_SwapWindow(window)
+
+                            if pressed(input, .Quit) {
+                                game.is_running = false
+                            }
                         }
                     }
                 }
@@ -178,10 +163,6 @@ Game :: struct {
     next_stage: Stage,
 }
 
-Input :: struct {
-
-}
-
 music_channel: i32 = 0
 
 play_music :: proc(track: ^Mix.Music) {
@@ -192,6 +173,12 @@ play_music :: proc(track: ^Mix.Music) {
 
 update_and_render :: proc(game: ^Game, input: Input, assets: Assets) {
     assert(game != nil)
+
+    if just_pressed(input, .Title)   { game.next_stage = .Title   }
+    if just_pressed(input, .Level_1) { game.next_stage = .Level_1 }
+    if just_pressed(input, .Level_2) { game.next_stage = .Level_2 }
+    if just_pressed(input, .Level_3) { game.next_stage = .Level_3 }
+    if just_pressed(input, .Ending)  { game.next_stage = .Ending  }
 
     if game.this_stage != game.next_stage {
         Mix.FadeOutMusic(150)

@@ -1,4 +1,4 @@
-package main
+package client
 
 import "core:fmt"
 import "core:math/rand"

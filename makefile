@@ -1,2 +1,2 @@
 all:
-	odin run ./src -debug -extra-linker-flags:"-L/opt/homebrew/lib" -out:mmm
+	odin run ./src/client -debug -extra-linker-flags:"-L/opt/homebrew/lib" -out:mmm
