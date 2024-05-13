@@ -1,8 +1,6 @@
 package client
 
-import "core:fmt"
 import "core:math/rand"
-import "core:runtime"
 import "core:strings"
 
 PARTS_A :: []string{
@@ -47,16 +45,7 @@ get_name :: proc() -> cstring {
     b := rand.choice(PARTS_B)
     c := rand.choice(PARTS_C)
 
-    builder := strings.builder_make(0, len(a) + len(b) + len(c) + 3)
-
-    strings.write_string(&builder, a)
-    strings.write_byte  (&builder, ' ')
-    strings.write_string(&builder, b)
-    strings.write_byte  (&builder, ' ')
-    strings.write_string(&builder, c)
-    strings.write_byte  (&builder, 0)
-
-    name := strings.to_string(builder)
+    name := strings.concatenate({ a, " ", b, " ", c, "\x00" })
 
     return strings.unsafe_string_to_cstring(name)
 }
