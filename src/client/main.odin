@@ -74,7 +74,7 @@ main :: proc() {
                         defer SDL.GL_DeleteContext(gl_context)
 
                         GL.load_up_to(GL_MAJOR_VERSION, GL_MINOR_VERSION, SDL.gl_set_proc_address)
-                        GL.ClearColor(0.1, 0.2, 0.3, 1.0)
+                        GL.ClearColor(0.3, 0.2, 0.1, 1.0)
 
                         SDL.GL_MakeCurrent(window, gl_context)
 
