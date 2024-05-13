@@ -1,6 +1,7 @@
 package client
 
 import "core:fmt"
+import "core:math/linalg/glsl"
 import "core:strings"
 
 import SDL "vendor:sdl2"
@@ -8,6 +9,8 @@ import Img "vendor:sdl2/image"
 import Mix "vendor:sdl2/mixer"
 import Net "vendor:sdl2/net"
 import GL  "vendor:OpenGL"
+
+import "../renderer"
 
 SDL_SUCCESS      :: 0
 SDL_INIT_FLAGS   :: SDL.INIT_VIDEO | SDL.INIT_AUDIO
@@ -83,26 +86,34 @@ main :: proc() {
                             fmt.println(SDL.GetError())
                         }
 
-                        fmt.println("Hello,", name)
-
-                        game := Game {
-                            is_running = true,
-                            name       = name,
-                            this_stage = Stage.Title,
-                            next_stage = Stage.Title,
-                        }
-
                         input  := Input  {}
                         assets := Assets {}
 
                                 load_assets(&assets)
                         defer unload_assets(&assets)
 
+                        game := Game {
+                            is_running = true,
+                            name       = name,
+                            this_stage = Stage.Title,
+                            next_stage = Stage.Title,
+                            renderer   = renderer.Renderer { variant = renderer.Quad_Batch_Renderer {} }
+                        }
+
+                              renderer.render_init   (&game.renderer, "src/renderer/basic")
+                        defer renderer.render_destroy(&game.renderer)
+
+
                         for game.is_running {
+                            width:  i32
+                            height: i32
+                            SDL.GL_GetDrawableSize(window, &width, &height)
+                            GL.Viewport(0, 0, width, height)
+                            GL.Clear(GL.COLOR_BUFFER_BIT)
+
                             handle_events(&input)
                             update_and_render(&game, input, assets)
 
-                            GL.Clear(GL.COLOR_BUFFER_BIT)
                             SDL.GL_SwapWindow(window)
 
                             if pressed(input, .Quit) {
@@ -161,6 +172,7 @@ Game :: struct {
     name:       cstring,
     this_stage: Stage,
     next_stage: Stage,
+    renderer:   renderer.Renderer,
 }
 
 music_channel: i32 = 0
@@ -185,6 +197,22 @@ update_and_render :: proc(game: ^Game, input: Input, assets: Assets) {
         game.this_stage = game.next_stage
     }
 
+    // TEMP (combat)
+    // END TEMP
+
+    renderer.render_begin(&game.renderer)
+
+    // for y := 0; y < 10; y += 1 {
+    //     for x := 0; x < 10; x += 1 {
+    //         renderer.quad_batch_push_quad(
+    //             &game.renderer,
+    //             glsl.vec2 { f32(x * 10), f32(y * 10) },
+    //             glsl.vec2 { 10, 10 },
+    //             renderer.WHITE,
+    //         )
+    //     }
+    // }
+
     switch game.this_stage {
         case .Title:
             play_music(assets.title)
@@ -205,4 +233,6 @@ update_and_render :: proc(game: ^Game, input: Input, assets: Assets) {
         case .Ending:
             play_music(assets.ending)
     }
+
+    renderer.render_flush(&game.renderer)
 }
