@@ -46,16 +46,7 @@ main :: proc() {
                     is_running := true
 
                     for is_running {
-                        event: SDL.Event
-
-                        for SDL.PollEvent(&event) {
-                            #partial switch event.type {
-                                case .QUIT: {
-                                    is_running = false
-                                }
-                            }
-                        }
-
+                        handle_events()
                         update(server_socket, &clients)
                     }
 
@@ -70,6 +61,18 @@ clean_up_clients :: proc(clients: [MAX_CLIENTS]Client) {
     for client in clients {
         if client.in_use {
             NET.TCP_Close(client.socket)
+        }
+    }
+}
+
+handle_events :: proc() {
+    event: SDL.Event
+
+    for SDL.PollEvent(&event) {
+        #partial switch event.type {
+            case .QUIT: {
+                is_running = false
+            }
         }
     }
 }
