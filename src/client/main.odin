@@ -55,12 +55,15 @@ main :: proc() {
                     name := get_name()
                     defer delete(name)
 
+                    SETTINGS_RESOLUTION_X :: 800
+                    SETTINGS_RESOLUTION_Y :: 600
+
                     window := SDL.CreateWindow(
                         name,
                         SDL.WINDOWPOS_CENTERED,
                         SDL.WINDOWPOS_CENTERED,
-                        800,// settings.resolution_x,
-                        600,// settings.resolution_y,
+                        SETTINGS_RESOLUTION_X,
+                        SETTINGS_RESOLUTION_Y,
                         SDL.WINDOW_SHOWN | SDL.WINDOW_OPENGL
                     )
                     defer SDL.DestroyWindow(window)
@@ -97,7 +100,19 @@ main :: proc() {
                             name       = name,
                             this_stage = Stage.Title,
                             next_stage = Stage.Title,
-                            renderer   = renderer.Renderer { variant = renderer.Quad_Batch_Renderer {} }
+                            camera     = renderer.Camera {
+                                projection = glsl.mat4Ortho3d(
+                                    0.0,
+                                    SETTINGS_RESOLUTION_X,
+                                    0.0,
+                                    SETTINGS_RESOLUTION_Y,
+                                    0.1,
+                                    1000.0,
+                                ),
+                            },
+                            renderer = renderer.Renderer {
+                                variant = renderer.Quad_Batch_Renderer {}
+                            },
                         }
 
                               renderer.render_init   (&game.renderer, "src/renderer/basic")
@@ -172,6 +187,7 @@ Game :: struct {
     name:       cstring,
     this_stage: Stage,
     next_stage: Stage,
+    camera:     renderer.Camera,
     renderer:   renderer.Renderer,
 }
 
@@ -234,5 +250,5 @@ update_and_render :: proc(game: ^Game, input: Input, assets: Assets) {
             play_music(assets.ending)
     }
 
-    renderer.render_flush(&game.renderer)
+    renderer.render_flush(&game.renderer, game.camera)
 }

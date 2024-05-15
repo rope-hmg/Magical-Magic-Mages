@@ -15,11 +15,12 @@ Stats :: struct {
 }
 
 Renderer :: struct {
-    vao:    u32,
-    vbo:    u32,
-    ibo:    u32,
-    shader: u32,
-
+    vao:                u32,
+    vbo:                u32,
+    ibo:                u32,
+    shader:             u32,
+    u_view_projection:  i32,
+    u_transform:        i32,
     element_draw_count: i32,
 
     stats:   Stats,
@@ -31,9 +32,6 @@ Vertex :: struct {
     colour:   glsl.vec4,
     uv:       glsl.vec2,
     texture:  f32, // Have to use floats because the fragment shader in OpenGL cannot accept ints as input
-}
-
-Camera :: struct {
 }
 
 // TODO: Spend some time making structs for the public API functions. e.g. Colour, Texture, etc.
@@ -96,6 +94,9 @@ render_init :: proc(renderer: ^Renderer, shader_path: string) {
                 case Quad_Batch_Renderer:
                     quad_batch_init_uniforms(auto_cast &renderer.variant, renderer.shader)
             }
+
+            renderer.u_view_projection = GL.GetUniformLocation(renderer.shader, "u_view_projection")
+            renderer.u_transform       = GL.GetUniformLocation(renderer.shader, "u_transform")
         } else {
             // Not sure if this is the right thing to do.
             render_destroy(renderer)
@@ -126,7 +127,7 @@ render_begin :: proc(renderer: ^Renderer) {
     }
 }
 
-render_flush :: proc(renderer: ^Renderer) {
+render_flush :: proc(renderer: ^Renderer, camera: Camera) {
     assert(renderer != nil)
 
     switch v in renderer.variant {
@@ -135,7 +136,15 @@ render_flush :: proc(renderer: ^Renderer) {
     }
 
     GL.BindVertexArray(renderer.vao)
+
     GL.UseProgram(renderer.shader)
+
+    view_projection := glsl.mat4Translate(camera.position) * camera.projection
+    GL.UniformMatrix4fv(renderer.u_view_projection, 1, GL.FALSE, auto_cast &view_projection)
+
+    global_transform := glsl.mat4Translate(glsl.vec3 { 0, 0, 0 }) // TODO: Implement global transform
+    GL.UniformMatrix4fv(renderer.u_transform, 1, GL.FALSE, auto_cast &global_transform)
+
     GL.DrawElements(GL.TRIANGLES, renderer.element_draw_count, GL.UNSIGNED_INT, nil)
 
     renderer.element_draw_count = 0
