@@ -134,7 +134,7 @@ quad_batch_push_quad_with_colour :: proc(renderer: ^Renderer, position, size: gl
 
     quad_batch := &renderer.variant.(Quad_Batch_Renderer)
 
-    if batch_full(quad_batch) {
+    if batch_is_full(quad_batch) {
         quad_batch_flush(quad_batch, renderer.vbo)
         quad_batch_begin(quad_batch)
     }
@@ -147,7 +147,7 @@ quad_batch_push_quad_with_texture :: proc(renderer: ^Renderer, position, size: g
 
     quad_batch := &renderer.variant.(Quad_Batch_Renderer)
 
-    if batch_full(quad_batch) {
+    if batch_is_full(quad_batch) {
         quad_batch_flush(quad_batch, renderer.vbo)
         quad_batch_begin(quad_batch)
     }
@@ -181,7 +181,7 @@ quad_batch_push_quad :: proc {
 }
 
 @(private="file")
-batch_full :: proc(renderer: ^Quad_Batch_Renderer) -> bool {
+batch_is_full :: proc(renderer: ^Quad_Batch_Renderer) -> bool {
     return renderer.quad_buffer_index >= MAX_QUADS ||
            renderer.next_texture_unit >= renderer.texture_unit_count
 }
