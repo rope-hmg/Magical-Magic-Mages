@@ -94,8 +94,6 @@ Quad_Batch_Renderer :: struct {
     // Initialise the Samplers
     //----------------------------------------
 
-    GL.UseProgram(shader)
-
     for i: i32 = 0; i < renderer.texture_unit_count; i += 1 {
         renderer.samplers[i] = i;
     }

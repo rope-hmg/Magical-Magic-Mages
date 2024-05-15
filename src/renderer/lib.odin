@@ -90,6 +90,8 @@ render_init :: proc(renderer: ^Renderer, shader_path: string) {
             GL.GetProgramInfoLog,
             "Shader linking failed:",
         ) {
+            GL.UseProgram(renderer.shader)
+
             switch v in renderer.variant {
                 case Quad_Batch_Renderer:
                     quad_batch_init_uniforms(auto_cast &renderer.variant, renderer.shader)
