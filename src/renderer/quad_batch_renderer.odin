@@ -152,27 +152,27 @@ quad_batch_push_quad_with_texture :: proc(renderer: ^Renderer, position, size: g
         quad_batch_begin(quad_batch)
     }
 
-    texture_slot: i32 = 0
+    texture_unit: i32 = 0
 
     // Has the texture been used for something in the batch already?
     for i: i32 = 1;
-        i < quad_batch.next_texture_unit && texture_slot == 0;
+        i < quad_batch.next_texture_unit && texture_unit == 0;
         i += 1
     {
         if quad_batch.texture_units[i] == texture_id {
-            texture_slot = i
+            texture_unit = i
         }
     }
 
     // It has not been used before, so we should add it.
-    if texture_slot == 0 {
-        texture_slot = quad_batch.next_texture_unit
+    if texture_unit == 0 {
+        texture_unit = quad_batch.next_texture_unit
 
         quad_batch.texture_units[quad_batch.next_texture_unit] = texture_id
         quad_batch.next_texture_unit += 1
     }
 
-    push_quad(renderer, quad_batch, position, size, glsl.vec4 { 0, 0, 0, 0 }, texture_slot)
+    push_quad(renderer, quad_batch, position, size, glsl.vec4 { 0, 0, 0, 0 }, texture_unit)
 }
 
 quad_batch_push_quad :: proc {
@@ -192,7 +192,7 @@ push_quad :: proc(
     quad_batch:     ^Quad_Batch_Renderer,
     position, size: glsl.vec2,
     colour:         glsl.vec4,
-    texture_slot:   i32,
+    texture_unit:   i32,
 ) {
     half_size := size / 2
 
@@ -216,10 +216,10 @@ push_quad :: proc(
     v2.uv       = glsl.vec2 { 1, 1 }
     v3.uv       = glsl.vec2 { 0, 1 }
 
-    v0.texture  = f32(texture_slot)
-    v1.texture  = f32(texture_slot)
-    v2.texture  = f32(texture_slot)
-    v3.texture  = f32(texture_slot)
+    v0.texture  = f32(texture_unit)
+    v1.texture  = f32(texture_unit)
+    v2.texture  = f32(texture_unit)
+    v3.texture  = f32(texture_unit)
 
     quad_batch.quad_buffer_index  += 4
     renderer.element_draw_count   += 6
