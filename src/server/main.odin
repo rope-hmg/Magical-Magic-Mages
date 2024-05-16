@@ -3,7 +3,7 @@ package server
 import "core:fmt"
 
 import SDL "vendor:sdl2"
-import NET "vendor:sdl2/net"
+import Net "vendor:sdl2/net"
 
 SDL_SUCCESS     :: 0
 SDL_INIT_FLAGS  :: SDL.INIT_TIMER | SDL.INIT_EVENTS
@@ -12,7 +12,7 @@ MAX_PACKET_SIZE :: 0xFF
 
 Client :: struct {
     in_use: bool,
-    socket: NET.TCPsocket,
+    socket: Net.TCPsocket,
 }
 
 main :: proc() {
@@ -22,24 +22,24 @@ main :: proc() {
     } else {
         defer SDL.Quit()
 
-        if NET.Init() != 0 {
+        if Net.Init() != 0 {
             fmt.println("Failed to initialise SDL_Net:")
-            fmt.println(NET.GetError())
+            fmt.println(Net.GetError())
         } else {
-            defer NET.Quit()
+            defer Net.Quit()
 
-            ip: NET.IPaddress
-            if NET.ResolveHost(&ip, nil, 25006) != 0 {
+            ip: Net.IPaddress
+            if Net.ResolveHost(&ip, nil, 25006) != 0 {
                 fmt.println("Failed to resolve host:")
-                fmt.println(NET.GetError())
+                fmt.println(Net.GetError())
             } else {
 
-                server_socket := NET.TCP_Open(&ip)
+                server_socket := Net.TCP_Open(&ip)
                 if server_socket == nil {
                     fmt.println("Failed to open socket:")
-                    fmt.println(NET.GetError())
+                    fmt.println(Net.GetError())
                 } else {
-                    defer NET.TCP_Close(server_socket)
+                    defer Net.TCP_Close(server_socket)
 
                     clients: [MAX_CLIENTS]Client
 
@@ -60,7 +60,7 @@ main :: proc() {
 clean_up_clients :: proc(clients: [MAX_CLIENTS]Client) {
     for client in clients {
         if client.in_use {
-            NET.TCP_Close(client.socket)
+            Net.TCP_Close(client.socket)
         }
     }
 }
@@ -77,17 +77,17 @@ handle_events :: proc() {
     }
 }
 
-update :: proc(server_socket: NET.TCPsocket, clients: ^[MAX_CLIENTS]Client) {
-    if NET.SocketReady(server_socket) {
+update :: proc(server_socket: Net.TCPsocket, clients: ^[MAX_CLIENTS]Client) {
+    if Net.SocketReady(server_socket) {
         max_clients_reached := true
 
         for &client in clients {
             if !client.in_use {
-                client_socket := NET.TCP_Accept(server_socket)
+                client_socket := Net.TCP_Accept(server_socket)
 
                 if client_socket == nil {
                     fmt.println("Failed to accept client:")
-                    fmt.println(NET.GetError())
+                    fmt.println(Net.GetError())
                 } else {
                     client.in_use = true
                     client.socket = client_socket
@@ -105,12 +105,12 @@ update :: proc(server_socket: NET.TCPsocket, clients: ^[MAX_CLIENTS]Client) {
 
     for client in clients {
         if client.in_use {
-            if NET.SocketReady(client.socket) {
+            if Net.SocketReady(client.socket) {
                 fmt.println("Client ready to receive data")
 
 
                 // packet := [MAX_PACKET_SIZE]byte
-                // packet_len := NET.TCP_Recv(client.socket, &packet, MAX_PACKET_SIZE)
+                // packet_len := Net.TCP_Recv(client.socket, &packet, MAX_PACKET_SIZE)
 
                 // if packet_len <= 0 {
                 //     fmt.println("Client disconnected")
