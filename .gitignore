@@ -1,4 +1,8 @@
 .DS_Store
 
+*.kra~
+*.png~
+*.kra-autosave.kra
+
 mmm
 /mmm.dSYM
