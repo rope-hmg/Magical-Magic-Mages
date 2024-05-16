@@ -6,13 +6,225 @@ import "core:math"
 
 import SDL "vendor:sdl2"
 
+GLYPH_TILE_W :: 8
+GLYPH_TILE_H :: 16
+ENTRY_COUNT  :: 4
+ENTRY_TEXT   := [ENTRY_COUNT]string {
+    "Play",
+    "Options",
+    "Credits",
+    "Quit",
+}
+
+Title_Data :: struct {
+    title_text: Title_Text,
+    options:    [ENTRY_COUNT]Menu_Entry,
+    selected:   i32,
+    animation:  Text_Animation,
+}
+
+Menu_Entry :: struct {
+    glyphs: []^Glyph,
+    rect:   SDL.Rect,
+}
+
+Title_Text :: struct {
+    glyphs:      []^Glyph,
+    width:       i32,
+    scale:       i32,
+    start_x:     i32,
+    start_y:     i32,
+}
+
 Glyph :: struct {
     spacing: i32,
     glyph_x: i32,
     glyph_y: i32,
 }
 
-fancy_glyps := [256]Glyph {
+title_load :: proc(title_data: ^Title_Data, title: cstring) {
+    title_text_load(&title_data.title_text, title)
+
+    for i := 0; i < ENTRY_COUNT; i += 1 {
+        title_data.options[i].glyphs = make([]^Glyph, len(ENTRY_TEXT[i]))
+
+        width: i32 = 0
+        text := transmute(runtime.Raw_String) ENTRY_TEXT[i]
+
+        for c := 0; c < text.len; c += 1 {
+            char  := text.data[c]
+            glyph := &fancy_glyphs[char]
+            width += glyph.spacing
+
+            title_data.options[i].glyphs[c] = glyph
+        }
+
+        title_data.options[i].rect = SDL.Rect {
+            x = 0,
+            y = 0,
+            w = width,
+            h = GLYPH_TILE_H,
+        }
+    }
+
+    title_data.animation = make_wave_animation()
+}
+
+title_text_load :: proc(title_text: ^Title_Text, title: cstring) {
+    assert(title_text != nil)
+
+    title_len        := len(title)
+    title_bytes      := transmute(runtime.Raw_Cstring) title
+    title_text.glyphs = make([]^Glyph, title_len)
+    title_text.scale  = 4
+    title_text.width  = 0
+
+    for i := 0; i < title_len; i += 1 {
+        b := title_bytes.data[i]
+        g := &fancy_glyphs[b]
+
+        title_text.width    += g.spacing
+        title_text.glyphs[i] = g
+    }
+
+    for title_text.width * title_text.scale > RESOLUTION_X do title_text.scale -= 1
+    if  title_text.scale <= 0                              do title_text.scale  = 1
+
+    title_text.start_x = (RESOLUTION_X - (title_text.width * title_text.scale)) / 2
+    title_text.start_y = 10
+}
+
+title_unload :: proc(using title_data: ^Title_Data) {
+    assert(title_data != nil)
+
+    delete_animation(title_data.animation)
+
+    delete(title_text.glyphs)
+    title_data.title_text.glyphs = nil
+
+    for i := 0; i < ENTRY_COUNT; i += 1 {
+        delete(options[i].glyphs)
+        options[i].glyphs = nil
+    }
+}
+
+title_update_and_render :: proc(title_data: ^Title_Data, renderer: ^SDL.Renderer, assets: Assets) -> ^Stage {
+    assert(title_data != nil)
+    assert(renderer   != nil)
+
+    {
+        using title_data
+
+        SDL.SetRenderDrawColor(renderer, 255, 0, 0, 0)
+
+        render_glyphs(
+            renderer,
+            title_text.glyphs,
+            assets.fancy,
+            title_text.start_x,
+            title_text.start_y,
+            title_text.scale,
+            animation,
+        )
+    }
+
+    for i: i32 = 0; i < ENTRY_COUNT; i += 1 {
+        entry := &title_data.options[i]
+
+        if title_data.selected == i {
+            SDL.SetRenderDrawColor(renderer, 0, 255, 0, 0)
+        } else {
+            SDL.SetRenderDrawColor(renderer, 255, 0, 0, 0)
+        }
+
+        render_glyphs(
+            renderer,
+            title_data.options[i].glyphs,
+            assets.fancy,
+            0,
+            100 + i * (GLYPH_TILE_H + 10),
+            1,
+        )
+    }
+
+    return nil
+}
+
+Text_Animation :: struct {
+    user_data: rawptr,
+    transform: proc(SDL.Rect, i32, i32, rawptr) -> SDL.Rect,
+}
+
+IDENTITY :: Text_Animation {
+    user_data = nil,
+    transform = proc(rect: SDL.Rect, index, scale: i32, user_data: rawptr) -> SDL.Rect {
+        return rect
+    },
+}
+
+make_wave_animation :: proc() -> Text_Animation {
+    // TODO: Think about removing this allocation. We probably don't need to put it on the heap.
+    animation_t := new(f32)
+
+    return Text_Animation {
+        user_data = animation_t,
+        transform = proc(rect: SDL.Rect, index, scale: i32, user_data: rawptr) -> SDL.Rect {
+            assert(user_data != nil)
+
+            animation_t  := cast(^f32) user_data
+            result       := rect
+            result.y     += i32(math.sin(animation_t^ + f32(index)) * f32(scale))
+            animation_t^ += 0.005
+
+            return result
+        },
+    }
+}
+
+delete_animation :: proc(animation: Text_Animation) {
+    assert(animation.user_data != nil)
+    free  (animation.user_data)
+}
+
+render_glyphs :: proc(
+    renderer:        ^SDL.Renderer,
+    glyphs:        []^Glyph,
+    glyph_texture:   ^SDL.Texture,
+    start_x:          i32,
+    start_y:          i32,
+    scale:            i32,
+    animation:        Text_Animation = IDENTITY,
+) {
+    assert(renderer      != nil)
+    assert(glyphs        != nil)
+    assert(glyph_texture != nil)
+
+    src_rect := SDL.Rect {
+        w = GLYPH_TILE_W,
+        h = GLYPH_TILE_H,
+    }
+
+    dst_rect := SDL.Rect {
+        x = start_x,
+        y = start_y,
+        w = GLYPH_TILE_W * scale,
+        h = GLYPH_TILE_H * scale,
+    }
+
+    for glyph, i in glyphs {
+        src_rect.x = GLYPH_TILE_W * glyph.glyph_x
+        src_rect.y = GLYPH_TILE_H * glyph.glyph_y
+
+        transformed := animation.transform(dst_rect, i32(i), scale, animation.user_data)
+
+        SDL.RenderFillRect(renderer, &transformed)
+        SDL.RenderCopy    (renderer, glyph_texture, &src_rect, &transformed)
+
+        dst_rect.x += glyph.spacing * scale
+    }
+}
+
+fancy_glyphs := [256]Glyph {
     Glyph {},
     Glyph {},
     Glyph {},
@@ -269,80 +481,4 @@ fancy_glyps := [256]Glyph {
     Glyph {},
     Glyph {},
     Glyph {},
-}
-
-Title_Text :: struct {
-    glyphs:      []^Glyph,
-    width:       i32,
-    scale:       i32,
-    start_x:     i32,
-    animation_t: f32,
-}
-
-title_text_load :: proc(title_text: ^Title_Text, title: cstring) {
-    assert(title_text != nil)
-
-    title_len        := len(title)
-    title_bytes      := transmute(runtime.Raw_Cstring) title
-    title_text.glyphs = make([]^Glyph, title_len)
-
-    title_text.scale       = 4
-    title_text.width       = 0
-    title_text.animation_t = 0
-
-    for i := 0; i < title_len; i += 1 {
-        b := title_bytes.data[i]
-        g := &fancy_glyps[b]
-
-        title_text.width    += g.spacing
-        title_text.glyphs[i] = g
-    }
-
-    for title_text.width * title_text.scale > RESOLUTION_X do title_text.scale -= 1
-    if  title_text.scale <= 0                              do title_text.scale  = 1
-
-    title_text.start_x = (RESOLUTION_X - (title_text.width * title_text.scale)) / 2
-}
-
-title_text_unload :: proc(title_text: ^Title_Text) {
-    assert(title_text != nil)
-    delete(title_text.glyphs)
-    title_text.glyphs = nil
-}
-
-title_text_update_and_render :: proc(title_text: ^Title_Text, renderer: ^SDL.Renderer, assets: Assets) {
-    assert(renderer   != nil)
-    assert(title_text != nil)
-
-    GLYPH_TILE_W :: 8
-    GLYPH_TILE_H :: 16
-
-    next_x: i32 = title_text.start_x
-    next_y: i32 = 10
-
-    title_text.animation_t += 0.05
-
-    src_rect := SDL.Rect {
-        w = GLYPH_TILE_W,
-        h = GLYPH_TILE_H,
-    }
-
-    dst_rect := SDL.Rect {
-        w = GLYPH_TILE_W * title_text.scale,
-        h = GLYPH_TILE_H * title_text.scale,
-    }
-
-    for glyph, index in title_text.glyphs {
-        src_rect.x = GLYPH_TILE_W * glyph.glyph_x
-        src_rect.y = GLYPH_TILE_H * glyph.glyph_y
-
-        dst_rect.x = next_x
-        dst_rect.y = next_y + i32(math.sin(title_text.animation_t + f32(index)) * f32(title_text.scale))
-
-        next_x += glyph.spacing * title_text.scale
-
-        SDL.SetRenderDrawColor(renderer, 255, 0, 0, 0)
-        SDL.RenderFillRect    (renderer, &dst_rect)
-        SDL.RenderCopy        (renderer, assets.fancy, &src_rect, &dst_rect)
-    }
 }

@@ -28,23 +28,6 @@ loading_update_and_render :: proc(loading_data: ^Loading_Data, assets: Assets) -
     return &Stage_Title
 }
 
-Title_Data :: struct {
-    title_text: Title_Text,
-}
-
-title_load :: proc(title_data: ^Title_Data, title: cstring) {
-    title_text_load(&title_data.title_text, title)
-}
-
-title_unload :: proc(title_data: ^Title_Data) {
-    title_text_unload(&title_data.title_text)
-}
-
-title_update_and_render :: proc(title_data: ^Title_Data, renderer: ^SDL.Renderer, assets: Assets) -> ^Stage {
-    title_text_update_and_render(&title_data.title_text, renderer, assets)
-    return nil
-}
-
 Credits_Data :: struct {
 // Music: Juhani Junkala
 }
