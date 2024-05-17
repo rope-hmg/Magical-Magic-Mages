@@ -1,5 +1,7 @@
 package client
 
+import "core:math"
+
 import SDL "vendor:sdl2"
 
 GLYPH_TILE_W :: 8
@@ -13,7 +15,6 @@ Title_Data :: struct {
     title_text: Text_Item,
     options:    [ENTRY_COUNT]Text_Item,
     hovered:    i32,
-    selected:   i32,
     animation:  Text_Animation,
 }
 
@@ -45,7 +46,19 @@ title_update_and_render :: proc(title_data: ^Title_Data, renderer: ^SDL.Renderer
     SDL.SetRenderDrawColor(renderer, 255, 0, 0, 0)
     render_text_item(renderer, title_data.title_text, title_data.animation)
 
-    title_data.selected = -1
+    selected: i32 = -1
+
+    if just_pressed(input, .Menu_Up) {
+        title_data.hovered = math.max(title_data.hovered - 1, 0)
+    }
+
+    if just_pressed(input, .Menu_Down) {
+        title_data.hovered = math.min(title_data.hovered + 1, ENTRY_COUNT - 1)
+    }
+
+    if just_pressed(input, .Key_Select) {
+        selected = title_data.hovered
+    }
 
     for i: i32 = 0; i < ENTRY_COUNT; i += 1 {
         entry    := &title_data.options[i]
@@ -54,8 +67,8 @@ title_update_and_render :: proc(title_data: ^Title_Data, renderer: ^SDL.Renderer
         if SDL.PointInRect(&position, &entry.bounds) {
             title_data.hovered = i
 
-            if just_pressed(input, .Select) {
-                title_data.selected = i
+            if just_pressed(input, .Mouse_Select) {
+                selected = i
             }
         }
     }
@@ -76,8 +89,8 @@ title_update_and_render :: proc(title_data: ^Title_Data, renderer: ^SDL.Renderer
 
     next_stage: ^Stage
 
-    if title_data.selected != -1 {
-        next_stage = ENTRY_STAGE[title_data.selected]
+    if selected != -1 {
+        next_stage = ENTRY_STAGE[selected]
 
         if next_stage == nil {
             // Quit somehow...

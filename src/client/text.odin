@@ -128,6 +128,10 @@ make_wave_animation :: proc() -> Text_Animation {
             animation_t  := cast(^f32) user_data
             result       := rect
             result.y     += i32(math.sin(animation_t^ + f32(index)) * f32(scale))
+            // TODO: This should not be updated by a fixed amount. It should be frame-rate independent and
+            //       needs to take the number of glyphs being animated into account. One solution could be
+            //       to have another function that is called once per frame, unlike this one which is once
+            //       per glyph.
             animation_t^ += 0.005
 
             return result

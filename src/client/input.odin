@@ -5,22 +5,30 @@ import SDL "vendor:sdl2"
 Action:: enum {
     Quit,
     Pause,
-    Select,
+    Key_Select,
+    Mouse_Select,
+    Menu_Up,
+    Menu_Down,
 }
 
 Actions :: bit_set[Action]
 
 key_map := map[SDL.Keycode]Action {
     .SPACE  = .Pause,
-    .RETURN = .Select,
+    .RETURN = .Key_Select,
+
+    .UP     = .Menu_Up,
+    .DOWN   = .Menu_Down,
+    .W      = .Menu_Up,
+    .S      = .Menu_Down,
 }
 
 btn_map := map[u8]Action {
-    SDL.BUTTON_LEFT   = .Select,
-    SDL.BUTTON_MIDDLE = .Select,
-    SDL.BUTTON_RIGHT  = .Select,
-    SDL.BUTTON_X1     = .Select,
-    SDL.BUTTON_X2     = .Select,
+    SDL.BUTTON_LEFT   = .Mouse_Select,
+    SDL.BUTTON_MIDDLE = .Mouse_Select,
+    SDL.BUTTON_RIGHT  = .Mouse_Select,
+    SDL.BUTTON_X1     = .Mouse_Select,
+    SDL.BUTTON_X2     = .Mouse_Select,
 }
 
 Input :: struct {
