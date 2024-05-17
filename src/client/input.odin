@@ -1,7 +1,5 @@
 package client
 
-import "core:fmt"
-
 import SDL "vendor:sdl2"
 
 Action:: enum {
@@ -26,8 +24,10 @@ key_map := map[SDL.Keycode]Action {
 }
 
 Input :: struct {
-    c_actions: Actions,
-    p_actions: Actions,
+    c_actions:       Actions,
+    p_actions:       Actions,
+    cursor_position: SDL.Point,
+    cursor_delta:    SDL.Point,
 }
 
 handle_events :: proc(input: ^Input) {
@@ -53,6 +53,18 @@ handle_events :: proc(input: ^Input) {
 
                 if action, ok := key_map[key]; ok {
                     input.c_actions -= { action }
+                }
+            }
+
+            case .MOUSEMOTION: {
+                input.cursor_position = SDL.Point {
+                    x = event.motion.x,
+                    y = event.motion.y,
+                }
+
+                input.cursor_delta = SDL.Point {
+                    x = event.motion.xrel,
+                    y = event.motion.yrel,
                 }
             }
         }
