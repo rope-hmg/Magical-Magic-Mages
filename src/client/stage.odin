@@ -47,12 +47,6 @@ credits_load :: proc(credits_data: ^Credits_Data) {}
 credits_unload :: proc(credits_data: ^Credits_Data) {}
 credits_update_and_render :: proc(credits_data: ^Credits_Data) -> ^Stage { return nil }
 
-Level_1_Data :: struct {}
-
-level_1_load :: proc(level_data: ^Level_1_Data) {}
-level_1_unload :: proc(level_data: ^Level_1_Data) {}
-level_1_update_and_render :: proc(level_data: ^Level_1_Data) -> ^Stage { return nil }
-
 Level_2_Data :: struct {}
 
 level_2_load :: proc(level_data: ^Level_2_Data) {}
@@ -131,7 +125,7 @@ stage_update_and_render :: proc(stage: ^Stage, renderer: ^SDL.Renderer, game: Ga
         case .Title:   next_stage =   title_update_and_render(auto_cast &stage.data, renderer, input)
         case .Credits: next_stage = credits_update_and_render(auto_cast &stage.data)
         case .Options: next_stage = options_update_and_render(auto_cast &stage.data)
-        case .Level_1: next_stage = level_1_update_and_render(auto_cast &stage.data)
+        case .Level_1: next_stage = level_1_update_and_render(auto_cast &stage.data, renderer)
         case .Level_2: next_stage = level_2_update_and_render(auto_cast &stage.data)
         case .Level_3: next_stage = level_3_update_and_render(auto_cast &stage.data)
         case .Ending:  next_stage =  ending_update_and_render(auto_cast &stage.data)
