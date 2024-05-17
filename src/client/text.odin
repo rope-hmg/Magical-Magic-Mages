@@ -1,5 +1,11 @@
 package client
 
+import "base:runtime"
+
+import "core:fmt"
+import "core:math"
+
+import SDL "vendor:sdl2"
 
 Text_Item :: struct {
     glyphs: []^Glyph,

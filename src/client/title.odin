@@ -1,10 +1,5 @@
 package client
 
-import "base:runtime"
-
-import "core:fmt"
-import "core:math"
-
 import SDL "vendor:sdl2"
 
 GLYPH_TILE_W :: 8
