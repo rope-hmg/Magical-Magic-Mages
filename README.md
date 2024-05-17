@@ -17,13 +17,50 @@ Then you can build and run the game with:
 make client
 make server
 ```
+# Alpha Roadmap:
 
-# Story
+- [x] Main Menu
+- [ ] Level 1
+    - [ ] Overworld Map
+        - [ ] Graph
+        - [ ] Player Movement
+        - [ ] Enemy Movement
+        - [ ] Obstacles
+        - [ ] Encounters
+            - [ ] Villages      (V)
+            - [ ] Fields        (F)
+            - [ ] Enemy Camps   (C)
+            - [ ] Ancient Ruins (R)
+    - [ ] Battle Mode
+        - [ ] Spell Casting
+        - [ ] Relic Effects
+    - [ ] Enemies
+        - [ ] Mage Neophyte
+        - [ ] Mage Acolyte
+    - [ ] Boss
+        - [ ] Mage General
 
-Level 1: Some Title That Makes This Level Sound Easy
-Level 2: The Four Generals
-Level 3: Mage King Igralin
+# Beta Roadmap:
 
-# Current Progress
+- [ ] Graphics
+- [ ] Options Menu
+- [ ] Level 2
+    - [ ] Map
+    - [ ] Enemies
+    - [ ] Boss
+        - [ ] Mage Generals
+- [ ] Level 3
+    - [ ] Map
+    - [ ] Enemies
+    - [ ] Boss
+        - [ ] Mage King
 
-Press the numbers: 0, 1, 2, 3, 4 to change the music
+# Release Roadmap:
+
+- [ ] Graphics
+- [ ] Credits Menu
+- [ ] Intro Cutscene
+- [ ] Map Editor
+- [ ] Multiplayer
+    - [ ] 1v1
+    - [ ] 2v2
