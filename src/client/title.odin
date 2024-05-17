@@ -8,8 +8,17 @@ GLYPH_TILE_W :: 8
 GLYPH_TILE_H :: 16
 ENTRY_COUNT  :: 4
 
-ENTRY_STAGE := [ENTRY_COUNT]^Stage {&Stage_Level_1, &Stage_Level_2, &Stage_Level_3, nil}
-ENTRY_TEXT  := [ENTRY_COUNT]string {"Play", "Options", "Credits", "Quit"}
+Entry_Descriptor :: struct {
+    text:  string,
+    stage: ^Stage,
+}
+
+ENTRIES := [ENTRY_COUNT]Entry_Descriptor {
+    { "Play",    &Stage_Level_1 },
+    { "Options", &Stage_Options },
+    { "Credits", &Stage_Credits },
+    { "Quit",     nil           },
+}
 
 Title_Data :: struct {
     title_text: Text_Item,
@@ -22,7 +31,7 @@ title_load :: proc(title_data: ^Title_Data, title: cstring, assets: Assets) {
     title_data.title_text = make_text_item(title, 0, 10, 4, assets.fancy)
 
     for i: i32 = 0; i < ENTRY_COUNT; i += 1 {
-        title_data.options[i] = make_text_item(ENTRY_TEXT[i], 0, 100 + i * (GLYPH_TILE_H + 20), 2, assets.fancy)
+        title_data.options[i] = make_text_item(ENTRIES[i].text, 0, 100 + i * (GLYPH_TILE_H + 20), 2, assets.fancy)
     }
 
     title_data.animation = make_wave_animation()
@@ -90,7 +99,7 @@ title_update_and_render :: proc(title_data: ^Title_Data, renderer: ^SDL.Renderer
     next_stage: ^Stage
 
     if selected != -1 {
-        next_stage = ENTRY_STAGE[selected]
+        next_stage = ENTRIES[selected].stage
 
         if next_stage == nil {
             // Quit somehow...
