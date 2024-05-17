@@ -80,7 +80,7 @@ main :: proc() {
                             // },
                         }
 
-                        stage_load(game.stage, game)
+                        stage_load(game.stage, game, assets)
 
                         for game.is_running {
                             SDL.SetRenderDrawColor(renderer, 0, 0, 0, 0)
@@ -199,7 +199,7 @@ update_and_render :: proc(renderer: ^SDL.Renderer, game: ^Game, input: Input, as
        next_stage != game.stage
     {
         stage_unload(game.stage)
-        stage_load  (next_stage, game^)
+        stage_load  (next_stage, game^, assets)
 
         if game.stage.music != next_stage.music {
             Mix.FadeOutMusic(150)

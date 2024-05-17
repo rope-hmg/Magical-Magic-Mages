@@ -84,10 +84,10 @@ Stage_Level_2 := Stage { id = .Level_2, data = Level_2_Data {} }
 Stage_Level_3 := Stage { id = .Level_3, data = Level_3_Data {} }
 Stage_Ending  := Stage { id = .Ending,  data = Ending_Data  {} }
 
-stage_load :: proc(stage: ^Stage, game: Game) {
+stage_load :: proc(stage: ^Stage, game: Game, assets: Assets) {
     switch stage.id {
         case .Loading: loading_load(auto_cast &stage.data)
-        case .Title:     title_load(auto_cast &stage.data, game.name)
+        case .Title:     title_load(auto_cast &stage.data, game.name, assets)
         case .Credits: credits_load(auto_cast &stage.data)
         case .Level_1: level_1_load(auto_cast &stage.data)
         case .Level_2: level_2_load(auto_cast &stage.data)
@@ -113,7 +113,7 @@ stage_update_and_render :: proc(stage: ^Stage, renderer: ^SDL.Renderer, game: Ga
 
     switch stage.id {
         case .Loading: next_stage = loading_update_and_render(auto_cast &stage.data, assets)
-        case .Title:   next_stage =   title_update_and_render(auto_cast &stage.data, renderer, assets)
+        case .Title:   next_stage =   title_update_and_render(auto_cast &stage.data, renderer, input)
         case .Credits: next_stage = credits_update_and_render(auto_cast &stage.data)
         case .Level_1: next_stage = level_1_update_and_render(auto_cast &stage.data)
         case .Level_2: next_stage = level_2_update_and_render(auto_cast &stage.data)
