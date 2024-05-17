@@ -10,17 +10,27 @@ Action:: enum {
     Level_2,
     Level_3,
     Ending,
+    Select,
 }
 
 Actions :: bit_set[Action]
 
 key_map := map[SDL.Keycode]Action {
-    .SPACE = .Pause,
     .NUM0  = .Title,
     .NUM1  = .Level_1,
     .NUM2  = .Level_2,
     .NUM3  = .Level_3,
     .NUM4  = .Ending,
+    .SPACE  = .Pause,
+    .RETURN = .Select,
+}
+
+btn_map := map[u8]Action {
+    SDL.BUTTON_LEFT   = .Select,
+    SDL.BUTTON_MIDDLE = .Select,
+    SDL.BUTTON_RIGHT  = .Select,
+    SDL.BUTTON_X1     = .Select,
+    SDL.BUTTON_X2     = .Select,
 }
 
 Input :: struct {
@@ -28,6 +38,7 @@ Input :: struct {
     p_actions:       Actions,
     cursor_position: SDL.Point,
     cursor_delta:    SDL.Point,
+    clicks:          u8,
 }
 
 handle_events :: proc(input: ^Input) {
@@ -65,6 +76,24 @@ handle_events :: proc(input: ^Input) {
                 input.cursor_delta = SDL.Point {
                     x = event.motion.xrel,
                     y = event.motion.yrel,
+                }
+            }
+
+            case .MOUSEBUTTONDOWN: {
+                input.clicks = event.button.clicks
+                button      := event.button.button
+
+                if action, ok := btn_map[button]; ok {
+                    input.c_actions += { action }
+                }
+            }
+
+            case .MOUSEBUTTONUP: {
+                input.clicks = event.button.clicks
+                button      := event.button.button
+
+                if action, ok := btn_map[button]; ok {
+                    input.c_actions -= { action }
                 }
             }
         }
