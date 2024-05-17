@@ -5,22 +5,12 @@ import SDL "vendor:sdl2"
 Action:: enum {
     Quit,
     Pause,
-    Title,
-    Level_1,
-    Level_2,
-    Level_3,
-    Ending,
     Select,
 }
 
 Actions :: bit_set[Action]
 
 key_map := map[SDL.Keycode]Action {
-    .NUM0  = .Title,
-    .NUM1  = .Level_1,
-    .NUM2  = .Level_2,
-    .NUM3  = .Level_3,
-    .NUM4  = .Ending,
     .SPACE  = .Pause,
     .RETURN = .Select,
 }

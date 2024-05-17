@@ -121,11 +121,5 @@ stage_update_and_render :: proc(stage: ^Stage, renderer: ^SDL.Renderer, game: Ga
         case .Ending:  next_stage =  ending_update_and_render(auto_cast &stage.data)
     }
 
-    if just_pressed(input, .Title)   { next_stage = &Stage_Title   }
-    if just_pressed(input, .Level_1) { next_stage = &Stage_Level_1 }
-    if just_pressed(input, .Level_2) { next_stage = &Stage_Level_2 }
-    if just_pressed(input, .Level_3) { next_stage = &Stage_Level_3 }
-    if just_pressed(input, .Ending)  { next_stage = &Stage_Ending  }
-
     return next_stage
 }
