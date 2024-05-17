@@ -7,6 +7,7 @@ import Mix "vendor:sdl2/mixer"
 Stage_Id :: enum {
     Loading,
     Title,
+    Options,
     Credits,
     Level_1,
     Level_2,
@@ -14,6 +15,7 @@ Stage_Id :: enum {
     Ending,
 }
 
+// TODO: Move asset loading to here.
 Loading_Data :: struct {}
 
 loading_load :: proc(loading_data: ^Loading_Data) {}
@@ -21,12 +23,21 @@ loading_unload :: proc(loading_data: ^Loading_Data) {}
 loading_update_and_render :: proc(loading_data: ^Loading_Data, assets: Assets) -> ^Stage {
     Stage_Title  .music = assets.title
     Stage_Credits.music = assets.title
+    Stage_Options.music = assets.title
     Stage_Level_1.music = assets.level_1
     Stage_Level_2.music = assets.level_2
     Stage_Level_3.music = assets.level_3
     Stage_Ending .music = assets.ending
     return &Stage_Title
 }
+
+Options_Data :: struct {
+// Music: Juhani Junkala
+}
+
+options_load :: proc(options_data: ^Options_Data) {}
+options_unload :: proc(options_data: ^Options_Data) {}
+options_update_and_render :: proc(options_data: ^Options_Data) -> ^Stage { return nil }
 
 Credits_Data :: struct {
 // Music: Juhani Junkala
@@ -63,6 +74,7 @@ ending_update_and_render :: proc(ending_data: ^Ending_Data) -> ^Stage { return n
 Stage_Data :: union {
     Loading_Data,
     Title_Data,
+    Options_Data,
     Credits_Data,
     Level_1_Data,
     Level_2_Data,
@@ -78,6 +90,7 @@ Stage :: struct {
 
 Stage_Loading := Stage { id = .Loading, data = Loading_Data {} }
 Stage_Title   := Stage { id = .Title,   data = Title_Data   {} }
+Stage_Options := Stage { id = .Options, data = Options_Data {} }
 Stage_Credits := Stage { id = .Credits, data = Credits_Data {} }
 Stage_Level_1 := Stage { id = .Level_1, data = Level_1_Data {} }
 Stage_Level_2 := Stage { id = .Level_2, data = Level_2_Data {} }
@@ -89,6 +102,7 @@ stage_load :: proc(stage: ^Stage, game: Game, assets: Assets) {
         case .Loading: loading_load(auto_cast &stage.data)
         case .Title:     title_load(auto_cast &stage.data, game.name, assets)
         case .Credits: credits_load(auto_cast &stage.data)
+        case .Options: options_load(auto_cast &stage.data)
         case .Level_1: level_1_load(auto_cast &stage.data)
         case .Level_2: level_2_load(auto_cast &stage.data)
         case .Level_3: level_3_load(auto_cast &stage.data)
@@ -101,6 +115,7 @@ stage_unload :: proc(stage: ^Stage) {
         case .Loading: loading_unload(auto_cast &stage.data)
         case .Title:     title_unload(auto_cast &stage.data)
         case .Credits: credits_unload(auto_cast &stage.data)
+        case .Options: options_unload(auto_cast &stage.data)
         case .Level_1: level_1_unload(auto_cast &stage.data)
         case .Level_2: level_2_unload(auto_cast &stage.data)
         case .Level_3: level_3_unload(auto_cast &stage.data)
@@ -115,6 +130,7 @@ stage_update_and_render :: proc(stage: ^Stage, renderer: ^SDL.Renderer, game: Ga
         case .Loading: next_stage = loading_update_and_render(auto_cast &stage.data, assets)
         case .Title:   next_stage =   title_update_and_render(auto_cast &stage.data, renderer, input)
         case .Credits: next_stage = credits_update_and_render(auto_cast &stage.data)
+        case .Options: next_stage = options_update_and_render(auto_cast &stage.data)
         case .Level_1: next_stage = level_1_update_and_render(auto_cast &stage.data)
         case .Level_2: next_stage = level_2_update_and_render(auto_cast &stage.data)
         case .Level_3: next_stage = level_3_update_and_render(auto_cast &stage.data)
