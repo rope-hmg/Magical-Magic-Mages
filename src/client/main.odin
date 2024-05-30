@@ -83,6 +83,8 @@ main :: proc() {
                         stage_load(game.stage, game, assets)
 
                         for game.is_running {
+                            t_start := SDL.GetPerformanceCounter()
+
                             SDL.SetRenderDrawColor(renderer, 0, 0, 0, 0)
                             SDL.RenderClear(renderer)
 
@@ -94,6 +96,13 @@ main :: proc() {
                             if pressed(input, .Quit) {
                                 game.is_running = false
                             }
+
+                            t_end  := SDL.GetPerformanceCounter()
+                            t_freq := SDL.GetPerformanceFrequency()
+
+                            game.delta = f64(t_end - t_start) / f64(t_freq)
+
+                            free_all(context.temp_allocator)
                         }
                     }
                 }
@@ -181,6 +190,7 @@ unload_assets :: proc(assets: ^Assets) {
 
 Game :: struct {
     is_running: bool,
+    delta:      f64,
     name:       cstring,
     stage:      ^Stage,
 }
