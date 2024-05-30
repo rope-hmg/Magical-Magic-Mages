@@ -57,11 +57,11 @@ title_update_and_render :: proc(title_data: ^Title_Data, renderer: ^SDL.Renderer
 
     selected: i32 = -1
 
-    if just_pressed(input, .Menu_Up) {
+    if just_pressed(input, .Up) {
         title_data.hovered = math.max(title_data.hovered - 1, 0)
     }
 
-    if just_pressed(input, .Menu_Down) {
+    if just_pressed(input, .Down) {
         title_data.hovered = math.min(title_data.hovered + 1, ENTRY_COUNT - 1)
     }
 

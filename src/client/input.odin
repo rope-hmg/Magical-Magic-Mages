@@ -7,8 +7,10 @@ Action:: enum {
     Pause,
     Key_Select,
     Mouse_Select,
-    Menu_Up,
-    Menu_Down,
+    Up,
+    Down,
+    Left,
+    Right,
 }
 
 Actions :: bit_set[Action]
@@ -16,11 +18,14 @@ Actions :: bit_set[Action]
 key_map := map[SDL.Keycode]Action {
     .SPACE  = .Pause,
     .RETURN = .Key_Select,
-
-    .UP     = .Menu_Up,
-    .DOWN   = .Menu_Down,
-    .W      = .Menu_Up,
-    .S      = .Menu_Down,
+    .UP     = .Up,
+    .LEFT   = .Left,
+    .DOWN   = .Down,
+    .RIGHT  = .Right,
+    .W      = .Up,
+    .A      = .Left,
+    .S      = .Down,
+    .D      = .Right,
 }
 
 btn_map := map[u8]Action {
