@@ -18,7 +18,6 @@ Platform :: struct {
 
 run_app :: proc(
     app_name:          cstring,
-    width, height:     i32,
     game:              ^$Game,
     init:              proc(p: ^Platform, g: ^Game),
     quit:              proc(p: ^Platform, g: ^Game),
@@ -34,12 +33,12 @@ run_app :: proc(
             fmt.println(sdl3.GetError())
         } else {
             platform := Platform {
-                width  = width,
-                height = height,
+                width  = 1152,
+                height = 864,
             }
 
             if !sdl3.CreateWindowAndRenderer(
-                app_name, width, height, {},
+                app_name, platform.width, platform.height, {},
                 &platform.window,
                 &platform.renderer,
             ) {
@@ -114,6 +113,8 @@ run_app :: proc(
         }
     }
 }
+
+Key :: sdl3.Scancode
 
 Button  :: enum { Left, Right }
 Buttons :: bit_set[Button]

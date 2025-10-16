@@ -12,14 +12,13 @@ import "vendor:sdl3/image"
 import "vendor:sdl3/ttf"
 import "vendor:box2d"
 
+import "game:adventure"
 import "game:name"
 import "game:wizard"
 import "game:physics"
 import "game:platform"
 import "game:graphics"
 import "game:graphics/ui"
-
-Key :: sdl3.Scancode
 
 PARTICLE_POOL_SIZE     :: 256
 PARTICLE_GRAVITY_SCALE :: 0.11
@@ -104,14 +103,11 @@ render_textured_physics_object :: proc(
 }
 
 main :: proc() {
-    game_name := name.get_name(); defer delete(game_name)
-    width     := i32(1152)
-    height    := i32(864)
-
     game: Game
+    game_name := name.get_name(); defer delete(game_name)
 
     platform.run_app(
-        game_name, width, height,
+        game_name,
         &game,
         init,
         quit,
@@ -132,9 +128,12 @@ Sounds :: struct {
 
 Game :: struct {
     state: enum {
+        Title,
         Character_Select,
-        Bounce_Balls,
-        Post_Fight_Scene,
+        Adventure_Select,
+        Battle,
+        Camp_Fire,
+        Post_Game,
     },
 
     adventure: adventure.Adventure,
@@ -159,9 +158,11 @@ Game :: struct {
     status_texture: ^sdl3.Texture,
 
     // Layout
-    scene_area_height:   f32,
+    scene_height:        f32,
     half_wall_thickness: f32,
     arena_width:         f32,
+    arena_height:        f32,
+    arena_offsets:        [2]glsl.vec2,
 
     // UI
     ui: struct {
@@ -179,7 +180,6 @@ Game :: struct {
     arena_walls:     [4]box2d.ShapeId,
     entities:        [2]wizard.Entity,
     enttity_damamge: [2]int,
-    arena_rects:     [2]sdl3.Rect,
     turn:            int,
 
     ball_position:      glsl.vec2,
@@ -192,18 +192,14 @@ Game :: struct {
     damage_score: int,
 }
 
-current_entity :: #force_inline proc(g: ^Game) -> ^wizard.Entity {
-    return &g.entities[g.turn]
-}
-
-other_entity :: #force_inline proc(g: ^Game) -> ^wizard.Entity {
-    return &g.entities[g.turn~1]
-}
+ player_entity :: #force_inline proc(g: ^Game) -> ^wizard.Entity { return &g.entities[0]        }
+  enemy_entity :: #force_inline proc(g: ^Game) -> ^wizard.Entity { return &g.entities[1]        }
+current_entity :: #force_inline proc(g: ^Game) -> ^wizard.Entity { return &g.entities[g.turn]   }
+  other_entity :: #force_inline proc(g: ^Game) -> ^wizard.Entity { return &g.entities[g.turn~1] }
 
 init :: proc(p: ^platform.Platform, g: ^Game) {
     // TODO: Maybe need to have a `desired_audio_spec`
     g.audio_device = sdl3.OpenAudioDevice(sdl3.AUDIO_DEVICE_DEFAULT_PLAYBACK, nil)
-    g.state = .Bounce_Balls
 
     if g.audio_device == 0 {
         fmt.println("Unable to open audio device:")
@@ -244,35 +240,39 @@ init :: proc(p: ^platform.Platform, g: ^Game) {
         wall_shape_def.filter.categoryBits = physics.CATEGORY_WALL
         wall_shape_def.filter.maskBits     = physics.CATEGORY_PARTICLE | physics.CATEGORY_BALL
 
-        g.scene_area_height   = f32(160)
+        g.arena_height        = f32(p.height) * wizard.ARENA_HEIGHT_FRACTION
+        g.arena_width         = f32(p.width)  * wizard.ARENA_WIDTH_FRACTION
+        g.scene_height        = f32(p.height) - g.arena_height
+        half_wall_height     := f32(p.height) - g.scene_height
         g.half_wall_thickness = f32(8)
-        g.arena_width         = f32(p.width / 2)
-        half_wall_height     := f32(p.height) - g.scene_area_height
+
+        g.arena_offsets[0] = {             0, g.scene_height }
+        g.arena_offsets[1] = { g.arena_width, g.scene_height }
 
         left_wall := physics.pixels_to_metres(sdl3.FRect {
             x = g.half_wall_thickness,
-            y = half_wall_height + g.scene_area_height,
+            y = half_wall_height + g.scene_height,
             w = g.half_wall_thickness,
             h = half_wall_height,
         })
 
         mid_wall := physics.pixels_to_metres(sdl3.FRect {
             x = g.arena_width,
-            y = half_wall_height + g.scene_area_height,
+            y = half_wall_height + g.scene_height,
             w = g.half_wall_thickness,
             h = half_wall_height,
         })
 
         right_wall := physics.pixels_to_metres(sdl3.FRect {
             x = f32(p.width) - g.half_wall_thickness,
-            y = half_wall_height + g.scene_area_height,
+            y = half_wall_height + g.scene_height,
             w = g.half_wall_thickness,
             h = half_wall_height,
         })
 
         ceiling := physics.pixels_to_metres(sdl3.FRect {
             x = g.arena_width,
-            y = g.half_wall_thickness + g.scene_area_height,
+            y = g.half_wall_thickness + g.scene_height,
             w = g.arena_width,
             h = g.half_wall_thickness
         })
@@ -361,9 +361,6 @@ init :: proc(p: ^platform.Platform, g: ^Game) {
         g.particle_system = make_particle_system(g.world_id)
         g.status_texture = image.LoadTexture(p.renderer, "assets/graphics/particles/circle_02.png")
 
-        g.arena_rects[0] = {   0, 160, 400, 460 }
-        g.arena_rects[1] = { 400, 160, 400, 460 }
-
         player := wizard.Wizard {
             rank = .White,
         }
@@ -371,8 +368,9 @@ init :: proc(p: ^platform.Platform, g: ^Game) {
         g.entities[0] = {
             health  = 100,
             arena   = wizard.make_spell_arena(
-                g.world_id, wizard.get_arena_layout_for_wizard(player),
-                0, 160, 400, 460, // g.arena_rects[0]
+                g.world_id,
+                wizard.get_arena_layout_for_wizard(player),
+                g.arena_offsets[0],
             ),
             variant = player,
         }
@@ -394,16 +392,16 @@ quit :: proc(p: ^platform.Platform, g: ^Game) {
 handle_event :: proc(p: ^platform.Platform, g: ^Game, e: sdl3.Event) {
     #partial switch e.type {
         case .KEY_UP:
-            if e.key.scancode == Key.R {
+            if e.key.scancode == .R {
                 wizard.delete_spell_arena(g.entities[1].arena)
 
                 g.entities[1] = {
                     health = 100,
                     arena  = wizard.make_spell_arena(
-                        g.world_id, adventure.get_test_arena_layout_for_stage(),
-                        400, 160, 400, 460, // g.arena_rects[1]
+                        g.world_id,
+                        adventure.get_test_arena_layout_for_stage(),
+                        g.arena_offsets[1],
                     ),
-                    variant = wizard.Beast {}
                 }
             }
     }
@@ -411,16 +409,43 @@ handle_event :: proc(p: ^platform.Platform, g: ^Game, e: sdl3.Event) {
 
 update_and_render :: proc(p: ^platform.Platform, g: ^Game) {
     switch g.state {
-        case .Character_Select:
-
-        case .Bounce_Balls:
-            bounce_balls(p, g)
-
-        case .Post_Fight_Scene:
+        case .Title:            do_title           (p, g)
+        case .Character_Select: do_character_select(p, g)
+        case .Adventure_Select: do_adventure_select(p, g)
+        case .Battle:           do_battle          (p, g)
+        case .Camp_Fire:        do_camp_fire       (p, g)
+        case .Post_Game:        do_post_game       (p, g)
     }
 }
 
-bounce_balls :: proc(p: ^platform.Platform, g: ^Game) {
+do_title :: proc(p: ^platform.Platform, g: ^Game) {
+    g.state = .Character_Select
+}
+
+do_character_select :: proc(p: ^platform.Platform, g: ^Game) {
+    g.state = .Adventure_Select
+}
+
+do_adventure_select :: proc(p: ^platform.Platform, g: ^Game) {
+    g.adventure.stage  = 0
+    g.adventure.stages = adventure.DRAGON_ADVENTURE
+
+    stage := adventure.stage(&g.adventure)
+
+    g.entities[1] = {
+        health = stage.enemy_health,
+        arena  = wizard.make_spell_arena(
+            g.world_id,
+            adventure.get_arena_layout_for_stage(stage),
+            g.arena_offsets[1],
+        ),
+    }
+
+    g.state = .Battle
+    g.turn  = 0
+}
+
+do_battle :: proc(p: ^platform.Platform, g: ^Game) {
     // ============
     // !!! Ball !!!
     //
@@ -435,7 +460,7 @@ bounce_balls :: proc(p: ^platform.Platform, g: ^Game) {
 
             g.ball_position = {
                 clamp(platform.mouse_position(p.mouse).x - ball_info.size_in_pixels / 2, min_x, max_x),
-                g.scene_area_height + ball_info.size_in_pixels * 2,
+                g.scene_height + ball_info.size_in_pixels * 2,
             }
 
             rect := sdl3.FRect {
@@ -513,12 +538,14 @@ bounce_balls :: proc(p: ^platform.Platform, g: ^Game) {
                     wizard.restore_spell_arena(&current.arena)
                 }
 
-                  other.health -= current.damage
-                current.damage  = 0
+                other.health   = max(other.health - current.damage, 0)
+                current.damage = 0
 
-                if other.variant != nil && other.health <= 0 {
-                    other.health = 100
-                    fmt.println("You win!")
+                if g.turn == 0 {
+                    // TODO: This should go somewhere else, but there isn't a good "end of turn" point in the code yet.
+                    if enemy_entity(g).health == 0 {
+                        g.state = .Camp_Fire
+                    }
                 }
 
                 g.turn ~= 1
@@ -704,6 +731,36 @@ bounce_balls :: proc(p: ^platform.Platform, g: ^Game) {
             hit_block(g, cast(^wizard.Spell_Block) user_data)
         }
     }
+}
+
+do_camp_fire :: proc(p: ^platform.Platform, g: ^Game) {
+    // TODO: Other camp fire activities
+
+    if adventure.advance_to_next_stage(&g.adventure) {
+        wizard.delete_spell_arena(enemy_entity(g).arena)
+
+        stage := adventure.stage(&g.adventure)
+
+        enemy_entity(g)^ = {
+            health = stage.enemy_health,
+            arena  = wizard.make_spell_arena(
+                g.world_id,
+                adventure.get_arena_layout_for_stage(stage),
+                g.arena_offsets[1],
+            ),
+        }
+
+        g.state = .Battle
+        g.turn  = 0
+    } else {
+        g.state = .Post_Game
+    }
+}
+
+do_post_game :: proc(p: ^platform.Platform, g: ^Game) {
+    fmt.println("You Win!")
+
+    g.state = .Title
 }
 
 hit_block :: proc(g: ^Game, block: ^wizard.Spell_Block) {

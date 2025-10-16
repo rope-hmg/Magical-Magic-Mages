@@ -7,6 +7,5 @@ Entity :: struct {
 
     variant: union {
         Wizard,
-        Beast,
     }
 }

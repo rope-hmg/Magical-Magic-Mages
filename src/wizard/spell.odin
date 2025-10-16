@@ -11,8 +11,8 @@ import "game:graphics"
 
 SPELL_BLOCK_SIZE_IN_PIXELS :: 20
 
-ARENA_WIDTH  :: 400
-ARENA_HEIGHT :: 440
+ARENA_HEIGHT_FRACTION :: 2.0 / 3.0
+ARENA_WIDTH_FRACTION  :: 1.0 / 2.0
 
 Block_Shape :: enum {
     Diamond,
@@ -29,6 +29,8 @@ Block_Element :: enum {
     Fire,     // Red
     Electric, // Yellow
 }
+
+Elements :: [Block_Element]int
 
 Block_Colours :: struct #raw_union {
     array:    [6            ]graphics.Colour,
@@ -69,7 +71,7 @@ Spell_Block :: struct {
 Spell_Arena :: struct {
     disabled: int,
     blocks:   []Spell_Block,
-    elements: [Block_Element]int,
+    elements: Elements,
     colours:  []graphics.Colour,
 }
 
@@ -104,12 +106,9 @@ Arena_Layout :: struct {
 @private _polygons: [Block_Shape][Block_Scale]Maybe(box2d.Polygon)
 
 make_spell_arena :: proc(
-    world_id:       box2d.WorldId,
-    arena_layout:   Arena_Layout,
-    arena_x_pixels: int,
-    arena_y_pixels: int,
-    arena_w_pixels: int,
-    arena_h_pixels: int,
+    world_id:     box2d.WorldId,
+    arena_layout: Arena_Layout,
+    arena_offset: glsl.vec2,
 ) -> Spell_Arena {
     //
     // Generate polygons for all scales that exist within the layout
@@ -157,7 +156,6 @@ make_spell_arena :: proc(
 
     for layout_block, i in layout.blocks {
         width, height := half_layout_block_size_metres(layout_block)
-        arena_offset  := glsl.vec2 { f32(arena_x_pixels), f32(arena_y_pixels) }
         block_offset  := glsl.vec2 { width, height }
 
         if layout_block.shape == .Rectangle {

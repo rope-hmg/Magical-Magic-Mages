@@ -31,12 +31,12 @@ Ring :: struct {
 
 @private _layouts: [Rank]Arena_Layout
 
-LAYOUT_WHITE  :: #load("./layouts/wizard/white.json")
-LAYOUT_BLUE   :: #load("./layouts/wizard/blue.json")
-LAYOUT_PURPLE :: #load("./layouts/wizard/purple.json")
-LAYOUT_BROWN  :: #load("./layouts/wizard/brown.json")
-LAYOUT_BLACK  :: #load("./layouts/wizard/black.json")
-LAYOUT_RED    :: #load("./layouts/wizard/red.json")
+LAYOUT_WHITE  :: #load("./layouts/white.json")
+LAYOUT_BLUE   :: #load("./layouts/blue.json")
+LAYOUT_PURPLE :: #load("./layouts/purple.json")
+LAYOUT_BROWN  :: #load("./layouts/brown.json")
+LAYOUT_BLACK  :: #load("./layouts/black.json")
+LAYOUT_RED    :: #load("./layouts/red.json")
 
 get_arena_layout_for_wizard :: proc(wizard: Wizard, test := false) -> Arena_Layout {
     //

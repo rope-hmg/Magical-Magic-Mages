@@ -342,14 +342,15 @@ delete_text :: proc(ctx: ^Context, text_item: _Text_Ptr, offset, length: int) {
 // ----------------------------------------------
 
 int_to_string :: proc(value: int) -> string {
-    DIGITS := "0123456789"
+    @static DIGITS := []u8 { 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39 }
+
     text: string
 
     if value == 0 {
         text = "0"
     } else {
-        text_length := 0
-        number      := value
+        text_length := value < 0 ? 1 : 0
+        number      := abs(value)
 
         for number > 0 {
             text_length += 1
@@ -357,7 +358,11 @@ int_to_string :: proc(value: int) -> string {
         }
 
         text_digits := make([]u8, text_length, context.temp_allocator)
-        number       = value
+        number       = abs(value)
+
+        if value < 0 {
+            text_digits[0] = 0x2D // -
+        }
 
         for number > 0 {
             text_length -= 1

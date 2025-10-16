@@ -17,14 +17,11 @@ import "game:wizard"
 import "game:graphics"
 import "game:graphics/ui"
 
-WINDOW_WIDTH  :: 800
-WINDOW_HEIGHT :: 600
-
 main :: proc() {
     ld: Level_Designer
 
     platform.run_app(
-        "Level Designer", WINDOW_WIDTH, WINDOW_HEIGHT,
+        "Level Designer",
         &ld,
         init,
         quit,
@@ -99,11 +96,14 @@ init :: proc(p: ^platform.Platform, g: ^Level_Designer) {
     g.level.blocks = make([]wizard.Layout_Block, MAX_BLOCKS)
     g.selected     = -1
 
+    arena_width  := f32(p.width)  * wizard.ARENA_WIDTH_FRACTION
+    arena_height := f32(p.height) * wizard.ARENA_HEIGHT_FRACTION
+
     g.arena_rect = sdl3.FRect {
-        x = (WINDOW_WIDTH - wizard.ARENA_WIDTH) / 2,
-        y = 160,
-        w = wizard.ARENA_WIDTH,
-        h = wizard.ARENA_HEIGHT,
+        x = (f32(p.width)  - arena_width) / 2,
+        y = (f32(p.height) - arena_height),
+        w = arena_width,
+        h = arena_height,
     }
 
     g.arena_min = glsl.vec2 { g.arena_rect.x,                  g.arena_rect.y                  }
@@ -113,10 +113,10 @@ init :: proc(p: ^platform.Platform, g: ^Level_Designer) {
     g.ui.save_level = ui.create_button(g.ui.ctx, "Save", graphics.rgb(60, 60, 200))
     g.ui.load_level = ui.create_button(g.ui.ctx, "Load", graphics.rgb(60, 60, 200))
 
-    g.ui.spawn_diamond   = ui.create_button(g.ui.ctx, "Diamond",   graphics.rgb(200, 200, 200))
-    g.ui.spawn_pentagon  = ui.create_button(g.ui.ctx, "Pentagon",  graphics.rgb(200, 200, 200))
-    g.ui.spawn_square    = ui.create_button(g.ui.ctx, "Square",    graphics.rgb(200, 200, 200))
-    g.ui.spawn_rectangle = ui.create_button(g.ui.ctx, "Rectangle", graphics.rgb(200, 200, 200))
+    g.ui.spawn_diamond   = ui.create_button(g.ui.ctx, "Diamond (D)",   graphics.rgb(200, 200, 200))
+    g.ui.spawn_pentagon  = ui.create_button(g.ui.ctx, "Pentagon (P)",  graphics.rgb(200, 200, 200))
+    g.ui.spawn_square    = ui.create_button(g.ui.ctx, "Square (S)",    graphics.rgb(200, 200, 200))
+    g.ui.spawn_rectangle = ui.create_button(g.ui.ctx, "Rectangle (R)", graphics.rgb(200, 200, 200))
 
     g.ui.increment_size = ui.create_button(g.ui.ctx, "+",      graphics.rgb(60, 60, 200))
     g.ui.decrement_size = ui.create_button(g.ui.ctx, "-",      graphics.rgb(60, 60, 200))
@@ -141,7 +141,20 @@ quit :: proc(p: ^platform.Platform, g: ^Level_Designer) {
 }
 
 handle_event :: proc(p: ^platform.Platform, g: ^Level_Designer, e: sdl3.Event) {
+    #partial switch e.type {
+        case .KEY_UP:
+            #partial switch e.key.scancode {
+                case .D: spawn_block(g, .Diamond)
+                case .P: spawn_block(g, .Pentagon)
+                case .S: spawn_block(g, .Square)
+                case .R: spawn_block(g, .Rectangle)
 
+                case .EQUALS, .KP_PLUS: increment_block_size(_selected_block(g))
+                case .MINUS, .KP_MINUS: decrement_block_size(_selected_block(g))
+
+                case .BACKSPACE, .DELETE: delete_selected_block(g)
+            }
+    }
 }
 
 update_and_render :: proc(p: ^platform.Platform, g: ^Level_Designer) {
@@ -286,28 +299,13 @@ update_and_render :: proc(p: ^platform.Platform, g: ^Level_Designer) {
 
     // Block Spawners
     // ==============
-    __spawn_block :: proc(g: ^Level_Designer, shape: wizard.Block_Shape) {
-        fmt.println(g.used, shape)
-
-        if g.used < MAX_BLOCKS {
-            g.selected = g.used
-            g.spawned  = true
-
-            block      := &g.level.blocks[g.used]
-            block.shape = shape
-            block.scale = .One
-
-            g.used += 1
-        }
-    }
-
     {
         ui.push_layout_scope(g.ui.ctx, ui.column_layout(g.arena_rect.x, g.arena_rect.y, .Right))
 
-        if ui.button(g.ui.ctx, g.ui.spawn_diamond)   do __spawn_block(g, .Diamond)
-        if ui.button(g.ui.ctx, g.ui.spawn_pentagon)  do __spawn_block(g, .Pentagon)
-        if ui.button(g.ui.ctx, g.ui.spawn_square)    do __spawn_block(g, .Square)
-        if ui.button(g.ui.ctx, g.ui.spawn_rectangle) do __spawn_block(g, .Rectangle)
+        if ui.button(g.ui.ctx, g.ui.spawn_diamond)   do spawn_block(g, .Diamond)
+        if ui.button(g.ui.ctx, g.ui.spawn_pentagon)  do spawn_block(g, .Pentagon)
+        if ui.button(g.ui.ctx, g.ui.spawn_square)    do spawn_block(g, .Square)
+        if ui.button(g.ui.ctx, g.ui.spawn_rectangle) do spawn_block(g, .Rectangle)
 
         if g.selected == -1 {
             g.ui.increment_size.disabled = true
@@ -326,19 +324,14 @@ update_and_render :: proc(p: ^platform.Platform, g: ^Level_Designer) {
 
             // NOTE: These are rendered backwards because
             //       the row is right aligned.
-            if ui.button(g.ui.ctx, g.ui.increment_size) do block.scale = cast(wizard.Block_Scale) min(4, int(block.scale) + 1)
-            if ui.button(g.ui.ctx, g.ui.decrement_size) do block.scale = cast(wizard.Block_Scale) max(1, int(block.scale) - 1)
+            if ui.button(g.ui.ctx, g.ui.increment_size) do increment_block_size(block)
+            if ui.button(g.ui.ctx, g.ui.decrement_size) do decrement_block_size(block)
 
             ui.label(g.ui.ctx, g.ui.scale_label)
         }
 
         if ui.button(g.ui.ctx, g.ui.delete) {
-            if g.selected != -1 {
-                g.used -= 1
-
-                slice.swap(g.level.blocks, g.selected, g.used)
-                g.selected = -1
-            }
+            delete_selected_block(g)
         }
     }
 
@@ -412,6 +405,31 @@ update_and_render :: proc(p: ^platform.Platform, g: ^Level_Designer) {
     if g.spawned {
         g.spawned = false
         __move_block(g, m_position)
+    }
+}
+
+spawn_block :: proc(g: ^Level_Designer, shape: wizard.Block_Shape) {
+    if g.used < MAX_BLOCKS {
+        g.selected = g.used
+        g.spawned  = true
+
+        block      := &g.level.blocks[g.used]
+        block.shape = shape
+        block.scale = .One
+
+        g.used += 1
+    }
+}
+
+increment_block_size :: #force_inline proc(block: ^wizard.Layout_Block) { block.scale = cast(wizard.Block_Scale) min(4, int(block.scale) + 1) }
+decrement_block_size :: #force_inline proc(block: ^wizard.Layout_Block) { block.scale = cast(wizard.Block_Scale) max(1, int(block.scale) - 1) }
+
+delete_selected_block :: proc(g: ^Level_Designer) {
+    if g.selected != -1 {
+        g.used -= 1
+
+        slice.swap(g.level.blocks, g.selected, g.used)
+        g.selected = -1
     }
 }
 
