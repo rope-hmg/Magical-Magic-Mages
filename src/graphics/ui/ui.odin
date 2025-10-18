@@ -24,6 +24,47 @@ Context :: struct {
     text_padding: f32,
 }
 
+make_context :: #force_inline proc(
+    renderer:    ^sdl3.Renderer,
+    text_engine: ^ttf.TextEngine,
+    font:        ^ttf.Font,
+    mouse:       ^platform.Mouse,
+) -> ^Context {
+    ctx := new(Context)
+
+    ctx.renderer    = renderer
+    ctx.text_engine = text_engine
+    ctx.font        = font
+    ctx.mouse       = mouse
+
+    return ctx
+}
+
+@(deferred_in_out=pop_spacing)
+push_spacing_scope :: proc(ctx: ^Context, new_spacing: f32) -> f32 {
+    old_spacing := ctx.spacing
+    ctx.spacing  = new_spacing
+
+    return old_spacing
+}
+
+pop_spacing :: proc(ctx: ^Context, new_spacing, old_spacing: f32) {
+    ctx.spacing = old_spacing
+}
+
+@(deferred_in_out=pop_text_padding)
+push_text_padding_scope :: proc(ctx: ^Context, new_text_padding: f32) -> f32 {
+    old_text_padding := ctx.text_padding
+    ctx.text_padding  = new_text_padding
+
+    return old_text_padding
+}
+
+pop_text_padding :: proc(ctx: ^Context, new_text_padding, old_text_padding: f32) {
+    ctx.text_padding = old_text_padding
+}
+
+
 Layout_Type  :: enum { Row, Column }
 Layout_Align :: enum { Left, Right }
 Layout_Style :: struct {
@@ -109,19 +150,22 @@ pop_layout :: proc(ctx: ^Context, layout: Layout) {
     layout := _parent_layout(ctx)
     ctx.layout_index = max(0, ctx.layout_index - 1)
 
+    Nothing :: struct {}
+    nothing: ^Nothing
+
     _apply_layout_to_item(
         ctx,
         layout.w, layout.h,
-        proc(ctx: ^Context, x, y: f32, userdata: ^rawptr) -> rawptr { return nil },
-        nil,
+        nothing,
+        proc(ctx: ^Context, item: ^Nothing, rect: ^sdl3.FRect) -> ^Nothing { return nil },
     )
 }
 
 @private _apply_layout_to_item :: proc(
-    ctx:      ^Context,
-    w, h:     f32,
-    render:   proc(ctx: ^Context, x, y: f32, userdata: ^$U) -> $T,
-    userdata: ^U,
+    ctx:    ^Context,
+    w, h:   f32,
+    item:   ^$U,
+    render: proc(ctx: ^Context, item: ^U, rect: ^sdl3.FRect) -> $T,
 ) -> T {
     result: T
 
@@ -136,7 +180,7 @@ pop_layout :: proc(ctx: ^Context, layout: Layout) {
             case { .Column, .Right }: x = layout.x_start - (w + ctx.spacing)
         }
 
-        result = render(ctx, x, y, userdata)
+        result = render(ctx, item, &{ x, y, w, h })
 
         switch layout.type {
             case .Row:
@@ -176,44 +220,40 @@ pop_layout :: proc(ctx: ^Context, layout: Layout) {
 // ----------------------------------------------
 
 Button :: struct {
-    colour:   graphics.Colour,
-    text:     ^ttf.Text,
-    w, h:     f32,
-    disabled: bool,
+    colour: graphics.Colour,
+    text:   ^ttf.Text,
+    w, h:   f32,
 }
 
 create_button :: proc(ctx: ^Context, text: string, colour: graphics.Colour) -> Button {
     button := Button {
-        colour   = colour,
-        text     = ttf.CreateText(ctx.text_engine, ctx.font, cstring(raw_data(text)), len(text)),
-        disabled = false,
+        colour = colour,
+        text   = ttf.CreateText(ctx.text_engine, ctx.font, cstring(raw_data(text)), len(text)),
     }
 
-    button.w, button.h = _get_padded_width_height(ctx, button.text)
+    button.w, button.h = _get_text_width_height(ctx, button.text)
 
     return button
 }
 
-button :: proc(ctx: ^Context, button: Button) -> bool {
-    button := button
+button :: proc(ctx: ^Context, button: Button, disabled := false) -> bool {
+    Button_Properties :: struct {
+        button:   Button,
+        disabled: bool,
+    }
 
     return _apply_layout_to_item(
         ctx,
-        button.w, button.h,
-        proc(ctx: ^Context, x, y: f32, button: ^Button) -> bool {
-            button_rect := sdl3.FRect {
-                x = x,
-                y = y,
-                w = button.w,
-                h = button.h,
-            }
-
-            c := button.disabled ? DISABLED_COLOUR : button.colour
+        button.w + ctx.text_padding * 2,
+        button.h + ctx.text_padding * 2,
+        &Button_Properties { button, disabled },
+        proc(ctx: ^Context, props: ^Button_Properties, rect: ^sdl3.FRect) -> bool {
+            c := props.disabled ? DISABLED_COLOUR : props.button.colour
             p := false
             h := false
 
-            if !button.disabled &&
-               sdl3.PointInRectFloat(cast(sdl3.FPoint) platform.mouse_position(ctx.mouse^), button_rect)
+            if !props.disabled &&
+               sdl3.PointInRectFloat(cast(sdl3.FPoint) platform.mouse_position(ctx.mouse^), rect^)
             {
                 c = graphics.lighten(c, 1.2)
                 p = platform.button_pressed(ctx.mouse^, .Left)
@@ -226,28 +266,27 @@ button :: proc(ctx: ^Context, button: Button) -> bool {
             // Render Button Background
             // ========================
             _set_render_draw_colour(ctx.renderer, c)
-            sdl3.RenderFillRect(ctx.renderer, &button_rect)
+            sdl3.RenderFillRect(ctx.renderer, rect)
 
             // Render Button Shadow
             // ====================
             shadow_size := ctx.text_padding * 0.6
 
             _set_render_draw_colour(ctx.renderer, h?d:l)
-            sdl3.RenderFillRect(ctx.renderer, &sdl3.FRect{ x=x, y=y, w=button.w, h=shadow_size })
-            sdl3.RenderFillRect(ctx.renderer, &sdl3.FRect{ x=x, y=y, w=shadow_size, h=button.h })
+            sdl3.RenderFillRect(ctx.renderer, &sdl3.FRect{ x=rect.x, y=rect.y, w=rect.w, h=shadow_size })
+            sdl3.RenderFillRect(ctx.renderer, &sdl3.FRect{ x=rect.x, y=rect.y, w=shadow_size, h=rect.h })
 
             _set_render_draw_colour(ctx.renderer, h?l:d)
-            sdl3.RenderFillRect(ctx.renderer, &sdl3.FRect{ x=x, y=y+button.h-shadow_size, w=button.w, h=shadow_size })
-            sdl3.RenderFillRect(ctx.renderer, &sdl3.FRect{ x=x+button.w-shadow_size, y=y, w=shadow_size, h=button.h })
+            sdl3.RenderFillRect(ctx.renderer, &sdl3.FRect{ x=rect.x, y=rect.y+rect.h-shadow_size, w=rect.w, h=shadow_size })
+            sdl3.RenderFillRect(ctx.renderer, &sdl3.FRect{ x=rect.x+rect.w-shadow_size, y=rect.y, w=shadow_size, h=rect.h })
 
             // Render Button Text
             // ==================
-            ttf.SetTextColor(button.text, 0, 0, 0, 255)
-            ttf.DrawRendererText(button.text, x + ctx.text_padding, y + ctx.text_padding)
+            ttf.SetTextColor(props.button.text, 0, 0, 0, 255)
+            ttf.DrawRendererText(props.button.text, rect.x + ctx.text_padding, rect.y + ctx.text_padding)
 
             return p
         },
-        &button
     )
 }
 
@@ -267,7 +306,7 @@ create_label :: proc(ctx: ^Context, text: string, colour: graphics.Colour) -> La
         text   = ttf.CreateText(ctx.text_engine, ctx.font, cstring(raw_data(text)), len(text)),
     }
 
-    label.w, label.h = _get_padded_width_height(ctx, label.text)
+    label.w, label.h = _get_text_width_height(ctx, label.text)
 
     return label
 }
@@ -277,29 +316,43 @@ label :: proc(ctx: ^Context, label: Label) {
 
     _apply_layout_to_item(
         ctx,
-        label.w, label.h,
-        proc(ctx: ^Context, x, y: f32, label: ^Label) -> rawptr {
-            label_rect := sdl3.FRect {
-                x = x,
-                y = y,
-                w = label.w,
-                h = label.h,
-            }
-
-            // Render Label Background
-            // ========================
-            _set_render_draw_colour(ctx.renderer, label.colour)
-            sdl3.RenderFillRect(ctx.renderer, &label_rect)
-
-            // Render Label Text
-            // ==================
-            ttf.SetTextColor(label.text, 0, 0, 0, 255)
-            ttf.DrawRendererText(label.text, x + ctx.text_padding, y + ctx.text_padding)
+        label.w + ctx.text_padding * 2,
+        label.h + ctx.text_padding * 2,
+        &label,
+        proc(ctx: ^Context, label: ^Label, rect: ^sdl3.FRect) -> rawptr {
+            label_at_rect(ctx, label^, rect)
 
             return nil
         },
-        &label,
     )
+}
+
+label_at :: proc {
+    label_at_point,
+    label_at_rect,
+}
+
+label_at_point :: proc(ctx: ^Context, label: Label, x, y: f32) {
+    rect := sdl3.FRect {
+        x = x,
+        y = y,
+        w = label.w + ctx.text_padding * 2,
+        h = label.h + ctx.text_padding * 2,
+    }
+
+    label_at_rect(ctx, label, &rect)
+}
+
+label_at_rect :: proc(ctx: ^Context, label: Label, rect: ^sdl3.FRect) {
+    // Render Label Background
+    // ========================
+    _set_render_draw_colour(ctx.renderer, label.colour)
+    sdl3.RenderFillRect(ctx.renderer, rect)
+
+    // Render Label Text
+    // ==================
+    ttf.SetTextColor(label.text, 0, 0, 0, 255)
+    ttf.DrawRendererText(label.text, rect.x + ctx.text_padding, rect.y + ctx.text_padding)
 }
 
 // ----------------------------------------------
@@ -321,7 +374,7 @@ insert_text :: proc(ctx: ^Context, text_item: _Text_Ptr, offset: int, insert: st
 @private _insert_text :: proc(ctx: ^Context, text: ^ttf.Text, offset: int, insert: string) -> (f32, f32) {
     ttf.InsertTextString(text, i32(offset), cstring(raw_data(insert)), uint(len(insert)))
 
-    return _get_padded_width_height(ctx, text)
+    return _get_text_width_height(ctx, text)
 }
 
 delete_text :: proc(ctx: ^Context, text_item: _Text_Ptr, offset, length: int) {
@@ -334,7 +387,7 @@ delete_text :: proc(ctx: ^Context, text_item: _Text_Ptr, offset, length: int) {
 @private _delete_text :: proc(ctx: ^Context, text: ^ttf.Text, offset, length: int) -> (f32, f32) {
     ttf.DeleteTextString(text, i32(offset), i32(length))
 
-    return _get_padded_width_height(ctx, text)
+    return _get_text_width_height(ctx, text)
 }
 
 // ----------------------------------------------
@@ -378,18 +431,16 @@ int_to_string :: proc(value: int) -> string {
     return text
 }
 
-@private _get_padded_width_height :: proc(ctx: ^Context, text: ^ttf.Text) -> (f32, f32) {
+@private _get_text_width_height :: proc(ctx: ^Context, text: ^ttf.Text) -> (f32, f32) {
     width:  i32
     height: i32
+
     if !ttf.GetTextSize(text, &width, &height) {
         width  = 50
         height = 25
     }
 
-    w := f32(width)  + ctx.text_padding * 2
-    h := f32(height) + ctx.text_padding * 2
-
-    return w, h
+    return f32(width), f32(height)
 }
 
 @private _set_render_draw_colour :: #force_inline proc(renderer: ^sdl3.Renderer, colour: graphics.Colour) {

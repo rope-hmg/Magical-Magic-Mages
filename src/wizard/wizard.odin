@@ -7,9 +7,12 @@ import "vendor:sdl3"
 
 Wizard :: struct {
     rank:     Rank,
+    elements: Elements,
     staff:    Staff,
     ring:     Ring,
-    grimoire: Block_Element,
+    grimoire: Grimoire,
+
+    action_points_per_camp: int,
 }
 
 Rank :: enum {
@@ -21,12 +24,32 @@ Rank :: enum {
     Red,
 }
 
+rank_to_string :: proc(rank: Rank) -> string {
+    result: string
+
+    switch rank {
+        case .White:  result = "White"
+        case .Blue:   result = "Blue"
+        case .Purple: result = "Purple"
+        case .Brown:  result = "Brown"
+        case .Black:  result = "Black"
+        case .Red:    result = "Red"
+    }
+
+    return result
+}
+
 Staff :: struct {
     element: Block_Element,
 }
 
 Ring :: struct {
     element: Block_Element,
+}
+
+Grimoire :: struct {
+    exp:  int,
+    next: int,
 }
 
 @private _layouts: [Rank]Arena_Layout
@@ -76,4 +99,14 @@ get_test_arena_layout_for_wizard :: proc() -> Arena_Layout {
     json.unmarshal(data, &layout)
 
     return layout
+}
+
+get_elements :: proc(wizard: Wizard) -> Elements {
+    result: Elements
+
+    for count, element in wizard.elements {
+        result[element] = count * int(wizard.rank)
+    }
+
+    return result
 }

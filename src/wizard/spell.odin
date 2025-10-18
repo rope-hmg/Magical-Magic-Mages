@@ -71,7 +71,6 @@ Spell_Block :: struct {
 Spell_Arena :: struct {
     disabled: int,
     blocks:   []Spell_Block,
-    elements: Elements,
     colours:  []graphics.Colour,
 }
 
@@ -99,8 +98,7 @@ half_layout_block_size_metres :: proc(block: Layout_Block) -> (f32, f32) {
 }
 
 Arena_Layout :: struct {
-    blocks:   []Layout_Block,
-    elements: [Block_Element]int,
+    blocks: []Layout_Block,
 }
 
 @private _polygons: [Block_Shape][Block_Scale]Maybe(box2d.Polygon)
@@ -108,6 +106,7 @@ Arena_Layout :: struct {
 make_spell_arena :: proc(
     world_id:     box2d.WorldId,
     arena_layout: Arena_Layout,
+    elements:     Elements,
     arena_offset: glsl.vec2,
 ) -> Spell_Arena {
     //
@@ -169,6 +168,7 @@ make_spell_arena :: proc(
         //       If it is, we should print a warning, and delete the block
 
         shape_def := box2d.DefaultShapeDef()
+        shape_def.material.friction    = 0.0
         shape_def.material.restitution = 1.0
         shape_def.userData             = &blocks[i]
         shape_def.filter.categoryBits  = physics.CATEGORY_BLOCK
@@ -187,16 +187,15 @@ make_spell_arena :: proc(
     }
 
     spell_arena := Spell_Arena {
-        blocks   = blocks,
-        elements = layout.elements,
+        blocks = blocks,
     }
 
     if blocks != nil {
-        _add_random_spell_blocks(&spell_arena)
+        _add_random_spell_blocks(&spell_arena, elements)
 
         colour_count := 1
 
-        for count, element in layout.elements {
+        for count, element in elements {
             if element == .Basic do continue
             if count > 0         do colour_count += 1
         }
@@ -205,7 +204,7 @@ make_spell_arena :: proc(
         spell_arena.colours[0] = BLOCK_COLOURS.elements[.Basic]
 
         index := 1
-        for count, element in layout.elements {
+        for count, element in elements {
             if element == .Basic do continue
 
             if count > 0 {
@@ -243,10 +242,10 @@ generate_non_overlapping_random_indices :: proc(indices: []int, max_value: int) 
     rand.shuffle(indices)
 }
 
-@private _add_random_spell_blocks :: proc(arena: ^Spell_Arena) {
+@private _add_random_spell_blocks :: proc(arena: ^Spell_Arena, elements: Elements) {
     total_count: int
 
-    for count, element in arena.elements {
+    for count, element in elements {
         if element == .Basic do continue
 
         total_count += count
@@ -259,7 +258,7 @@ generate_non_overlapping_random_indices :: proc(indices: []int, max_value: int) 
 
         generate_non_overlapping_random_indices(indices[:], block_count)
 
-        for count, element in arena.elements {
+        for count, element in elements {
             if element == .Basic do continue
 
             for i := magic_blocks - 1; i >= 0; i -= 1 {
@@ -273,7 +272,7 @@ generate_non_overlapping_random_indices :: proc(indices: []int, max_value: int) 
     }
 }
 
-restore_spell_arena :: proc(spell_arena: ^Spell_Arena) {
+restore_spell_arena :: proc(spell_arena: ^Spell_Arena, elements: Elements) {
     if spell_arena.blocks != nil {
         spell_arena.disabled = 0
 
@@ -284,7 +283,7 @@ restore_spell_arena :: proc(spell_arena: ^Spell_Arena) {
             block.health  = int(block.scale)
         }
 
-        _add_random_spell_blocks(spell_arena)
+        _add_random_spell_blocks(spell_arena, elements)
     }
 }
 

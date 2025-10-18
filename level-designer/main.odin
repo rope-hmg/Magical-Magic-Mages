@@ -79,11 +79,12 @@ init :: proc(p: ^platform.Platform, g: ^Level_Designer) {
         .Rectangle = image.LoadTexture(p.renderer, "assets/graphics/element_grey_rectangle.png"),
     }
 
-    g.ui.ctx             = new(ui.Context)
-    g.ui.ctx.renderer    = p.renderer
-    g.ui.ctx.text_engine = p.text_engine
-    g.ui.ctx.font        = ttf.OpenFont("assets/fonts/Kenney Rocket.ttf", 12)
-    g.ui.ctx.mouse       = &p.mouse
+    g.ui.ctx = ui.make_context(
+        p.renderer,
+        p.text_engine,
+        ttf.OpenFont("assets/fonts/Kenney Rocket.ttf", 12),
+        &p.mouse,
+    )
 
     g.ui.ctx.spacing      = 5.0
     g.ui.ctx.text_padding = 5.0
@@ -178,8 +179,7 @@ update_and_render :: proc(p: ^platform.Platform, g: ^Level_Designer) {
 
             if file != nil {
                 saveable_level := wizard.Arena_Layout {
-                    blocks   = g.level.blocks[:g.used],
-                    elements = g.level.elements,
+                    blocks = g.level.blocks[:g.used],
                 }
 
                 for &block in saveable_level.blocks {
@@ -273,8 +273,7 @@ update_and_render :: proc(p: ^platform.Platform, g: ^Level_Designer) {
     }
 
     __new_level :: proc(g: ^Level_Designer) {
-        g.used           = 0
-        g.level.elements = {}
+        g.used = 0
     }
 
     __save_level :: proc(p: ^platform.Platform, g: ^Level_Designer) {
@@ -307,15 +306,7 @@ update_and_render :: proc(p: ^platform.Platform, g: ^Level_Designer) {
         if ui.button(g.ui.ctx, g.ui.spawn_square)    do spawn_block(g, .Square)
         if ui.button(g.ui.ctx, g.ui.spawn_rectangle) do spawn_block(g, .Rectangle)
 
-        if g.selected == -1 {
-            g.ui.increment_size.disabled = true
-            g.ui.decrement_size.disabled = true
-            g.ui.delete        .disabled = true
-        } else {
-            g.ui.increment_size.disabled = false
-            g.ui.decrement_size.disabled = false
-            g.ui.delete        .disabled = false
-        }
+        disabled := g.selected == -1
 
         {
             ui.push_layout_scope(g.ui.ctx, ui.row_layout(0, 0, .Right))
@@ -324,13 +315,13 @@ update_and_render :: proc(p: ^platform.Platform, g: ^Level_Designer) {
 
             // NOTE: These are rendered backwards because
             //       the row is right aligned.
-            if ui.button(g.ui.ctx, g.ui.increment_size) do increment_block_size(block)
-            if ui.button(g.ui.ctx, g.ui.decrement_size) do decrement_block_size(block)
+            if ui.button(g.ui.ctx, g.ui.increment_size, disabled) do increment_block_size(block)
+            if ui.button(g.ui.ctx, g.ui.decrement_size, disabled) do decrement_block_size(block)
 
             ui.label(g.ui.ctx, g.ui.scale_label)
         }
 
-        if ui.button(g.ui.ctx, g.ui.delete) {
+        if ui.button(g.ui.ctx, g.ui.delete, disabled) {
             delete_selected_block(g)
         }
     }

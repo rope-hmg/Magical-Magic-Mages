@@ -136,13 +136,5 @@
             "shape": 0,
             "scale": 2
         }
-    ],
-    "elements": {
-        "Basic": 0,
-        "Ice": 4,
-        "Healing": 1,
-        "Poison": 0,
-        "Fire": 0,
-        "Electric": 3
-    }
+    ]
 }
