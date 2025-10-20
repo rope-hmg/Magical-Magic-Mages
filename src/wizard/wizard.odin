@@ -5,14 +5,14 @@ import "core:encoding/json"
 
 import "vendor:sdl3"
 
-Wizard :: struct {
-    rank:     Rank,
-    elements: Elements,
-    staff:    Staff,
-    ring:     Ring,
-    grimoire: Grimoire,
+BASE_HEALTH :: 100
 
-    action_points_per_camp: int,
+Wizard :: struct {
+    rank:      Rank,
+    staff:     Staff,
+    ring:      Ring,
+    grimoire:  Grimoire,
+    stats:    ^Character_Stats,
 }
 
 Rank :: enum {
@@ -104,9 +104,26 @@ get_test_arena_layout_for_wizard :: proc() -> Arena_Layout {
 get_elements :: proc(wizard: Wizard) -> Elements {
     result: Elements
 
-    for count, element in wizard.elements {
-        result[element] = count * int(wizard.rank)
+    if wizard.stats != nil {
+        for count, element in wizard.stats.elements {
+            result[element] = count * int(wizard.rank)
+        }
     }
 
     return result
+}
+
+get_max_health :: #force_inline proc(wizard: Wizard) -> int {
+    max_health := 0
+
+    switch wizard.rank {
+        case .White:  max_health = 150
+        case .Blue:   max_health = 175
+        case .Purple: max_health = 200
+        case .Brown:  max_health = 225
+        case .Black:  max_health = 250
+        case .Red:    max_health = 300
+    }
+
+    return max_health
 }

@@ -2,20 +2,13 @@
 
 Run the game with:
 ```bash
-clear; make-ld
+clear; make run
 ```
 
 Run the level designer with:
 ```bash
-clear; make-ld
+clear; make run-ld
 ```
-
-# TODO
-
-* Make the red less red. It's far too red.
-* Implement the diamond, and pentagon collision shapes.
-* Tweak the bouncyness of things
-* Make smaller sprites for when the blocks are broken/disabled
 
 # GAME WORLD
 

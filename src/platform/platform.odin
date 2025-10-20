@@ -13,6 +13,7 @@ Platform :: struct {
     renderer:     ^sdl3.Renderer,
     text_engine:  ^ttf.TextEngine,
     mouse:         Mouse,
+    running:       bool,
     delta_seconds: f32,
 }
 
@@ -77,17 +78,17 @@ run_app :: proc(
                 // Main Loop
                 // =========
 
-                running    := true
-                frame_tick := sdl3.GetTicks()
+                platform.running = true
+                frame_tick      := sdl3.GetTicks()
 
-                for running {
+                for platform.running {
                     platform.mouse.previous = platform.mouse.current
 
                     event: sdl3.Event
 
                     for sdl3.PollEvent(&event) {
                         #partial switch event.type {
-                            case .QUIT: running = false
+                            case .QUIT: platform.running = false
 
                             case .MOUSE_MOTION:      _update_mouse_position(&platform.mouse, event.motion)
                             case .MOUSE_BUTTON_UP:   _update_mouse_buttons (&platform.mouse, event.button)
@@ -122,6 +123,7 @@ Buttons :: bit_set[Button]
 Mouse_Instance :: struct {
     position: glsl.vec2,
     buttons:  Buttons,
+
 }
 
 Mouse :: struct {

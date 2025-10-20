@@ -221,7 +221,7 @@ pop_layout :: proc(ctx: ^Context, layout: Layout) {
 
 Button :: struct {
     colour: graphics.Colour,
-    text:   ^ttf.Text,
+    text:  ^ttf.Text,
     w, h:   f32,
 }
 
@@ -265,20 +265,26 @@ button :: proc(ctx: ^Context, button: Button, disabled := false) -> bool {
 
             // Render Button Background
             // ========================
-            _set_render_draw_colour(ctx.renderer, c)
-            sdl3.RenderFillRect(ctx.renderer, rect)
+            {
+                graphics.push_render_draw_colour_scope(ctx.renderer, c)
+                sdl3.RenderFillRect(ctx.renderer, rect)
+            }
 
             // Render Button Shadow
             // ====================
             shadow_size := ctx.text_padding * 0.6
 
-            _set_render_draw_colour(ctx.renderer, h?d:l)
-            sdl3.RenderFillRect(ctx.renderer, &sdl3.FRect{ x=rect.x, y=rect.y, w=rect.w, h=shadow_size })
-            sdl3.RenderFillRect(ctx.renderer, &sdl3.FRect{ x=rect.x, y=rect.y, w=shadow_size, h=rect.h })
+            {
+                graphics.push_render_draw_colour_scope(ctx.renderer, h?d:l)
+                sdl3.RenderFillRect(ctx.renderer, &sdl3.FRect{ x=rect.x, y=rect.y, w=rect.w, h=shadow_size })
+                sdl3.RenderFillRect(ctx.renderer, &sdl3.FRect{ x=rect.x, y=rect.y, w=shadow_size, h=rect.h })
+            }
 
-            _set_render_draw_colour(ctx.renderer, h?l:d)
-            sdl3.RenderFillRect(ctx.renderer, &sdl3.FRect{ x=rect.x, y=rect.y+rect.h-shadow_size, w=rect.w, h=shadow_size })
-            sdl3.RenderFillRect(ctx.renderer, &sdl3.FRect{ x=rect.x+rect.w-shadow_size, y=rect.y, w=shadow_size, h=rect.h })
+            {
+                graphics.push_render_draw_colour_scope(ctx.renderer, h?l:d)
+                sdl3.RenderFillRect(ctx.renderer, &sdl3.FRect{ x=rect.x, y=rect.y+rect.h-shadow_size, w=rect.w, h=shadow_size })
+                sdl3.RenderFillRect(ctx.renderer, &sdl3.FRect{ x=rect.x+rect.w-shadow_size, y=rect.y, w=shadow_size, h=rect.h })
+            }
 
             // Render Button Text
             // ==================
@@ -346,8 +352,10 @@ label_at_point :: proc(ctx: ^Context, label: Label, x, y: f32) {
 label_at_rect :: proc(ctx: ^Context, label: Label, rect: ^sdl3.FRect) {
     // Render Label Background
     // ========================
-    _set_render_draw_colour(ctx.renderer, label.colour)
-    sdl3.RenderFillRect(ctx.renderer, rect)
+    {
+        graphics.push_render_draw_colour_scope(ctx.renderer, label.colour)
+        sdl3.RenderFillRect(ctx.renderer, rect)
+    }
 
     // Render Label Text
     // ==================
@@ -442,14 +450,3 @@ int_to_string :: proc(value: int) -> string {
 
     return f32(width), f32(height)
 }
-
-@private _set_render_draw_colour :: #force_inline proc(renderer: ^sdl3.Renderer, colour: graphics.Colour) {
-    sdl3.SetRenderDrawColor(
-        renderer,
-        colour.components.r,
-        colour.components.g,
-        colour.components.b,
-        colour.components.a,
-    )
-}
-

@@ -16,10 +16,29 @@ import "vendor:box2d"
 import "game:adventure"
 import "game:name"
 import "game:wizard"
+import "game:entity"
 import "game:physics"
 import "game:platform"
 import "game:graphics"
 import "game:graphics/ui"
+
+main :: proc() {
+    game: Game
+    game_name := name.get_name(); defer delete(game_name)
+
+    platform.run_app(
+        game_name,
+        &game,
+        init,
+        quit,
+        handle_event,
+        update_and_render,
+    )
+}
+
+// ----------------------------------------------
+// Game
+// ----------------------------------------------
 
 PARTICLE_POOL_SIZE     :: 256
 PARTICLE_GRAVITY_SCALE :: 0.11
@@ -103,20 +122,6 @@ render_textured_physics_object :: proc(
     sdl3.RenderTexture(renderer, texture, nil, &rect)
 }
 
-main :: proc() {
-    game: Game
-    game_name := name.get_name(); defer delete(game_name)
-
-    platform.run_app(
-        game_name,
-        &game,
-        init,
-        quit,
-        handle_event,
-        update_and_render,
-    )
-}
-
 Sounds :: struct {
     hit_wall:      Audio,
     hit_basic:     Audio,
@@ -125,15 +130,6 @@ Sounds :: struct {
     hit_activator: Audio,
     hit_freezer:   Audio,
     hit_poisoner:  Audio,
-}
-
-Turn :: enum {
-    Player,
-    Enemy,
-}
-
-next_turn :: proc(turn: Turn) -> Turn {
-    return Turn(int(turn) ~ 1)
 }
 
 Game :: struct {
@@ -173,7 +169,7 @@ Game :: struct {
     half_wall_thickness: f32,
     arena_width:         f32,
     arena_height:        f32,
-    arena_offsets:       [Turn]glsl.vec2,
+    arena_offsets:       [entity.Turn]glsl.vec2,
 
     // UI
     ui: struct {
@@ -184,6 +180,16 @@ Game :: struct {
         player_damage: ui.Label,
         others_health: ui.Label,
         others_damage: ui.Label,
+
+        // Title Screen UI
+        play:    ui.Button,
+        options: ui.Button,
+        quit:    ui.Button,
+
+
+        // Character Select UI
+        select_character: ui.Label,
+        select_weapon:    ui.Label,
 
         // Camp Fire UI
         action_points:      ui.Label,
@@ -202,10 +208,12 @@ Game :: struct {
     arena_id:        box2d.BodyId,
     arena_walls:     [4]box2d.ShapeId,
     player:          wizard.Wizard,
-    entities:        [Turn]wizard.Entity,
-    enttity_damamge: [Turn]int,
-    turn:            Turn,
+    entities:        entity.Entities,
 
+    // Character Select
+    selected_character: wizard.Character,
+
+    // Camp Fire
     have_setup_camp:  bool,
     has_rested:       bool,
     has_investigated: bool,
@@ -219,11 +227,6 @@ Game :: struct {
     ball_state:         Ball_State,
     ball:               Ball,
 }
-
- player_entity :: #force_inline proc(g: ^Game) -> ^wizard.Entity { return &g.entities[.Player]      }
-  enemy_entity :: #force_inline proc(g: ^Game) -> ^wizard.Entity { return &g.entities[.Enemy]      }
-current_entity :: #force_inline proc(g: ^Game) -> ^wizard.Entity { return &g.entities[g.turn] }
-  other_entity :: #force_inline proc(g: ^Game) -> ^wizard.Entity { return &g.entities[next_turn(g.turn)] }
 
 init :: proc(p: ^platform.Platform, g: ^Game) {
     // TODO: Maybe need to have a `desired_audio_spec`
@@ -245,20 +248,36 @@ init :: proc(p: ^platform.Platform, g: ^Game) {
         g.ui.ctx.text_padding = 2
         g.ui.ctx.spacing      = 2
 
-        g.ui.player_health = ui.create_label(g.ui.ctx, "Health: ", graphics.rgb(200, 60, 60))
-        g.ui.player_damage = ui.create_label(g.ui.ctx, "Damage: ", graphics.rgb(60, 200, 60))
-        g.ui.others_health = ui.create_label(g.ui.ctx, "Health: ", graphics.rgb(200, 60, 60))
-        g.ui.others_damage = ui.create_label(g.ui.ctx, "Damage: ", graphics.rgb(60, 200, 60))
+        red   := graphics.rgb(200,  60,  60)
+        green := graphics.rgb( 60, 200,  60)
+        blue  := graphics.rgb( 60,  60, 200)
+        grey  := graphics.rgb(200, 200, 200)
 
-        g.ui.action_points      = ui.create_label (g.ui.ctx, "Action Points: ",  graphics.rgb(200, 200, 200))
-        g.ui.continue_journey   = ui.create_button(g.ui.ctx, "Continue Journey", graphics.rgb(200, 60, 60))
-        g.ui.rest               = ui.create_button(g.ui.ctx, "Rest and Recover", graphics.rgb(200, 60, 60))
-        g.ui.investigate        = ui.create_button(g.ui.ctx, "Investigate",      graphics.rgb(60, 200, 60))
-        g.ui.study              = ui.create_button(g.ui.ctx, "Study Grimoire",   graphics.rgb(60, 60, 200))
-        g.ui.current_rank       = ui.create_label (g.ui.ctx, "Rank: ",           graphics.rgb(200, 200, 200))
-        g.ui.study_exp          = ui.create_label (g.ui.ctx, "Progress: ",       graphics.rgb(200, 200, 200))
-        g.ui.study_cost         = ui.create_label (g.ui.ctx, "Cost: ",           graphics.rgb(200, 200, 200))
-        g.ui.investigation_cost = ui.create_label (g.ui.ctx, "Cost: ",           graphics.rgb(200, 200, 200))
+        // Battle UI
+        g.ui.player_health = ui.create_label(g.ui.ctx, "Health: ", red)
+        g.ui.player_damage = ui.create_label(g.ui.ctx, "Damage: ", green)
+        g.ui.others_health = ui.create_label(g.ui.ctx, "Health: ", red)
+        g.ui.others_damage = ui.create_label(g.ui.ctx, "Damage: ", green)
+
+        // Title Screen UI
+        g.ui.play    = ui.create_button(g.ui.ctx, "Play",    green)
+        g.ui.options = ui.create_button(g.ui.ctx, "Options", grey)
+        g.ui.quit    = ui.create_button(g.ui.ctx, "Quit",    grey)
+
+        // Character Select UI
+        g.ui.select_character = ui.create_label(g.ui.ctx, "Select Character", blue)
+        g.ui.select_weapon    = ui.create_label(g.ui.ctx, "Select Weapon", blue)
+
+        // Camp Fire UI
+        g.ui.action_points      = ui.create_label (g.ui.ctx, "Action Points: ",  grey)
+        g.ui.continue_journey   = ui.create_button(g.ui.ctx, "Continue Journey", red)
+        g.ui.rest               = ui.create_button(g.ui.ctx, "Rest and Recover", red)
+        g.ui.investigate        = ui.create_button(g.ui.ctx, "Investigate",      green)
+        g.ui.study              = ui.create_button(g.ui.ctx, "Study Grimoire",   blue)
+        g.ui.current_rank       = ui.create_label (g.ui.ctx, "Rank: ",           grey)
+        g.ui.study_exp          = ui.create_label (g.ui.ctx, "Progress: ",       grey)
+        g.ui.study_cost         = ui.create_label (g.ui.ctx, "Cost: ",           grey)
+        g.ui.investigation_cost = ui.create_label (g.ui.ctx, "Cost: ",           grey)
 
         g.sounds = {
             hit_wall      = load_wav("assets/audio/hit_wall.wav",            g.audio_device, &output_format),
@@ -422,9 +441,9 @@ handle_event :: proc(p: ^platform.Platform, g: ^Game, e: sdl3.Event) {
     #partial switch e.type {
         case .KEY_UP:
             if e.key.scancode == .R {
-                wizard.delete_spell_arena(g.entities[.Enemy].arena)
+                wizard.delete_spell_arena(g.entities.entities[.Enemy].arena)
 
-                g.entities[.Enemy] = {
+                g.entities.entities[.Enemy] = {
                     health = 100,
                     arena  = wizard.make_spell_arena(
                         g.world_id,
@@ -455,34 +474,164 @@ update_and_render :: proc(p: ^platform.Platform, g: ^Game) {
 }
 
 do_title :: proc(p: ^platform.Platform, g: ^Game) {
-    g.state = .Character_Select
+    ui.push_layout_scope(g.ui.ctx, ui.column_layout(10, 10))
+
+    if ui.button(g.ui.ctx, g.ui.play) {
+        g.state = .Character_Select
+    }
+
+    if ui.button(g.ui.ctx, g.ui.options) {
+
+    }
+
+    if ui.button(g.ui.ctx, g.ui.quit) {
+        p.running = false
+    }
 }
 
 do_character_select :: proc(p: ^platform.Platform, g: ^Game) {
-    g.state = .Adventure_Select
+    ui.push_spacing_scope(g.ui.ctx, 10)
 
-    g.player = {
-        rank     = .White,
-        elements = #partial {
-            .Ice  = 3,
-            .Fire = 3,
-        },
+    TWO_THIRDS :: f32(2.0/3.0)
+    ONE_THIRD  :: f32(1.0/3.0)
 
-        action_points_per_camp = 3,
+    // Width
+    total_padding := g.ui.ctx.spacing * 2
+    width         := f32(p.width) - total_padding
+
+    // Height
+    total_padding = g.ui.ctx.spacing * 4
+    height       := f32(p.height) - total_padding
+    two_thirds   := height * TWO_THIRDS - g.ui.continue_journey.h - g.ui.ctx.text_padding * 2
+    one_third    := height * ONE_THIRD
+
+    character_window := sdl3.FRect {
+        x = g.ui.ctx.spacing,
+        y = g.ui.ctx.spacing,
+        w = width,
+        h = two_thirds,
     }
 
-    g.entities[.Player] = {
-        health  = 100,
-        arena   = wizard.make_spell_arena(
-            g.world_id,
-            wizard.get_arena_layout_for_wizard(g.player),
-            g.player.elements,
-            g.arena_offsets[.Player],
-        ),
+    weapon_window := sdl3.FRect {
+        x = g.ui.ctx.spacing,
+        y = g.ui.ctx.spacing + character_window.h + g.ui.ctx.spacing,
+        w = width,
+        h = one_third,
     }
 
-    g.player.grimoire.exp  = 0
-    g.player.grimoire.next = 1
+
+    __f32_to_i32 :: #force_inline proc(a: f32) -> i32 {
+        return i32(glsl.floor(a))
+    }
+
+    {
+        ui.push_layout_scope(g.ui.ctx, ui.column_layout(character_window.x, character_window.y))
+
+        sdl3.SetRenderDrawColor(p.renderer, 0, 0, 255, 255)
+        sdl3.RenderRect(p.renderer, &character_window)
+
+        clip_rect := sdl3.Rect {
+            x = __f32_to_i32(character_window.x),
+            y = __f32_to_i32(character_window.y),
+            w = __f32_to_i32(character_window.w),
+            h = __f32_to_i32(character_window.h),
+        }
+
+        sdl3.SetRenderClipRect(p.renderer, &clip_rect)
+
+        ui.label(g.ui.ctx, g.ui.select_character)
+
+        character_card := sdl3.FRect {
+            x = character_window.x + g.ui.ctx.spacing,
+            y = character_window.y + g.ui.ctx.spacing + g.ui.select_character.h + g.ui.ctx.text_padding * 2,
+            w = 100,
+            h = 100,
+        }
+
+        for character, id in wizard.CHARACTERS {
+            // TODO: Make this not gay
+            text_surface := ttf.RenderText_Solid(
+                g.ui.ctx.font,
+                cstring(raw_data(character.name)),
+                             len(character.name),
+                graphics.rgb(200, 60, 60).sdl_colour,
+            )
+
+            text_texture := sdl3.CreateTextureFromSurface(p.renderer, text_surface)
+
+            text_rect := sdl3.FRect {
+                x = character_card.x + g.ui.ctx.text_padding * 2,
+                y = character_card.y + g.ui.ctx.text_padding,
+                w = f32(text_surface.w),
+                h = f32(text_surface.h),
+            }
+
+            defer sdl3.DestroySurface(text_surface)
+            defer sdl3.DestroyTexture(text_texture)
+
+            if id == g.selected_character {
+                sdl3.SetRenderDrawColor(p.renderer, 0, 255, 0, 255)
+            } else {
+                sdl3.SetRenderDrawColor(p.renderer, 0, 0, 255, 255)
+            }
+
+            sdl3.RenderRect(p.renderer, &character_card)
+            sdl3.RenderTexture(p.renderer, text_texture, nil, &text_rect)
+
+            if sdl3.PointInRectFloat(cast(sdl3.FPoint) platform.mouse_position(p.mouse), character_card) {
+                if platform.button_pressed(p.mouse, .Left) {
+                    g.selected_character = id
+                }
+            }
+
+            // TODO: Move to the next row if we hit the end
+            character_card.x += character_card.w + g.ui.ctx.spacing
+        }
+
+        sdl3.SetRenderClipRect(p.renderer, nil)
+    }
+
+    {
+        ui.push_layout_scope(g.ui.ctx, ui.column_layout(weapon_window.x, weapon_window.y))
+
+        sdl3.SetRenderDrawColor(p.renderer, 0, 0, 255, 255)
+        sdl3.RenderRect(p.renderer, &weapon_window)
+
+        ui.label(g.ui.ctx, g.ui.select_weapon)
+    }
+
+    {
+        ui.push_layout_scope(g.ui.ctx, ui.column_layout(weapon_window.x, weapon_window.y + weapon_window.h + g.ui.ctx.spacing))
+
+        if ui.button(g.ui.ctx, g.ui.continue_journey) {
+            g.player = {
+                rank = .White,
+
+                grimoire = {
+                    exp  = 0,
+                    next = 1,
+                },
+
+                stats = &wizard.CHARACTERS[g.selected_character]
+            }
+
+            entity := entity.player(&g.entities)
+            wizard.delete_spell_arena(entity.arena)
+
+            entity^ = {
+                health  = wizard.get_max_health(g.player),
+                arena   = wizard.make_spell_arena(
+                    g.world_id,
+                    wizard.get_arena_layout_for_wizard(g.player),
+                    g.player.stats.elements,
+                    g.arena_offsets[.Player],
+                ),
+            }
+
+            g.state         = .Adventure_Select
+            g.entities.turn = .Player
+        }
+    }
 }
 
 do_adventure_select :: proc(p: ^platform.Platform, g: ^Game) {
@@ -491,9 +640,12 @@ do_adventure_select :: proc(p: ^platform.Platform, g: ^Game) {
 
     adventure.init(g.ui.ctx, &g.adventure)
 
-    stage := adventure.stage(&g.adventure)
+    stage  := adventure.stage(&g.adventure)
+    entity := entity.enemy(&g.entities)
 
-    g.entities[.Enemy] = {
+    wizard.delete_spell_arena(entity.arena)
+
+    entity^ = {
         health = stage.enemy_health,
         arena  = wizard.make_spell_arena(
             g.world_id,
@@ -504,8 +656,6 @@ do_adventure_select :: proc(p: ^platform.Platform, g: ^Game) {
     }
 
     g.state = .Battle
-    // g.state = .Camp_Fire
-    g.turn  = .Player
 }
 
 do_battle :: proc(p: ^platform.Platform, g: ^Game) {
@@ -518,8 +668,8 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
             ball_info := BALL_INFO[g.ball_type]
 
             // TODO: Adjust for the second turn
-            min_x := g.arena_width * (f32(g.turn) + 0) + (g.half_wall_thickness * 2)
-            max_x := g.arena_width * (f32(g.turn) + 1) - (g.half_wall_thickness + ball_info.size_in_pixels)
+            min_x := g.arena_width * (f32(g.entities.turn) + 0) + (g.half_wall_thickness * 2)
+            max_x := g.arena_width * (f32(g.entities.turn) + 1) - (g.half_wall_thickness + ball_info.size_in_pixels)
 
             g.ball_position = {
                 clamp(platform.mouse_position(p.mouse).x - ball_info.size_in_pixels / 2, min_x, max_x),
@@ -581,7 +731,7 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                 sides := []glsl.vec2 { side1, side2 }
                 back  += rand.choice(sides) * 0.2
 
-                valid_colours := current_entity(g).arena.colours
+                valid_colours := entity.current(&g.entities).arena.colours
 
                 spawn_particle(g.particle_system, rand.choice(g.particle_textures[:]), rand.choice(valid_colours), g.ball_position + back  * rand.float32(), back  * 2)
                 spawn_particle(g.particle_system, rand.choice(g.particle_textures[:]), rand.choice(valid_colours), g.ball_position + side1 * rand.float32(), side1 * 2)
@@ -593,13 +743,13 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                 g.ball_escape_speed = 1.0
 
                 box2d.DestroyBody(g.ball.body_id)
-                current := current_entity(g)
-                  other :=   other_entity(g)
+                current := entity.current(&g.entities)
+                  other := entity.other  (&g.entities)
 
                 if current.arena.disabled == len(current.arena.blocks) {
                     elements: wizard.Elements
 
-                    switch g.turn {
+                    switch g.entities.turn {
                         case .Player: elements = wizard.get_elements(g.player)
                         case .Enemy:  elements = adventure.stage(&g.adventure).elements
                     }
@@ -608,18 +758,18 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                 }
 
                 // Don't apply damage if it killed itself
-                if enemy_entity(g).health == 0 {
+                if entity.enemy(&g.entities).health == 0 {
                     g.state = .Camp_Fire
                 } else {
                     other.health   = max(other.health - current.damage, 0)
                     current.damage = 0
 
-                    if enemy_entity(g).health == 0 {
+                    if entity.enemy(&g.entities).health == 0 {
                         g.state = .Camp_Fire
                     }
                 }
 
-                g.turn = next_turn(g.turn)
+                entity.advance_turn(&g.entities)
 
                 // if g.turn == .Player {
                 //     g.ball_type = g.ball_type == .Basic ? .Blue : .Basic
@@ -641,7 +791,7 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
 
     sdl3.SetRenderDrawColor(p.renderer, 255, 0, 0, 255)
 
-    for entity in g.entities {
+    for entity in g.entities.entities {
         for block in entity.arena.blocks {
             if box2d.Body_IsEnabled(block.body_id) {
                 texture := g.block_textures[block.element][block.shape]
@@ -756,8 +906,8 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
         ui.delete_text(ctx, d_label, DAMAGE_OFFSET, len(damage_string))
     }
 
-    player := &g.entities[.Player]
-    others := &g.entities[.Enemy]
+    player := &g.entities.entities[.Player]
+    others := &g.entities.entities[.Enemy]
 
     __draw_health_and_damage_ui(g.ui.ctx,                10, 10, .Left,  &g.ui.player_health, &g.ui.player_damage, player.health, player.damage)
     __draw_health_and_damage_ui(g.ui.ctx, f32(p.width) - 10, 10, .Right, &g.ui.others_health, &g.ui.others_damage, others.health, others.damage)
@@ -824,7 +974,7 @@ do_camp_fire :: proc(p: ^platform.Platform, g: ^Game) {
             g.has_investigated = false
             g.has_studied      = false
             g.have_setup_camp  = true
-            g.action_points   += g.player.action_points_per_camp
+            g.action_points   += g.player.stats.action_points_per_camp
         }
     }
 
@@ -887,29 +1037,6 @@ do_camp_fire :: proc(p: ^platform.Platform, g: ^Game) {
         }
 
         {
-            __push_forward :: #force_inline proc(g: ^Game) {
-                adventure.advance_to_next_stage(&g.adventure)
-
-                wizard.delete_spell_arena(enemy_entity(g).arena)
-
-                stage := adventure.stage(&g.adventure)
-
-                enemy_entity(g)^ = {
-                    health = stage.enemy_health,
-                    arena  = wizard.make_spell_arena(
-                        g.world_id,
-                        stage.arena_layout,
-                        stage.elements,
-                        g.arena_offsets[.Enemy],
-                    ),
-                }
-
-                g.state                 = .Battle
-                g.turn                  = .Player
-                g.have_setup_camp       = false
-                g.particle_system.count = 0
-            }
-
             // TODO: Would be good to get the length from the label itself.
             ACTION_POINTS_OFFSET :: len("Action Points: ")
             HEALTH_OFFSET        :: len("Health: ")
@@ -920,15 +1047,18 @@ do_camp_fire :: proc(p: ^platform.Platform, g: ^Game) {
             investigation_cost := adventure.investigation_cost(&g.adventure)
             study_exp          := g.player.grimoire.exp
             study_cost         := g.player.grimoire.next
-            player_entity      := player_entity(g)
+            player_entity      := entity.player(&g.entities)
+            max_health         := wizard.get_max_health(g.player)
 
-            health_string             := ui.int_to_string(player_entity.health)
+            now_health_string         := ui.int_to_string(player_entity.health)
+            max_health_string         := ui.int_to_string(max_health)
             investigation_cost_string := ui.int_to_string(investigation_cost)
             study_exp_string          := ui.int_to_string(study_exp)
             study_cost_string         := ui.int_to_string(study_cost)
             action_points_string      := ui.int_to_string(g.action_points)
             current_rank_string       := wizard.rank_to_string(g.player.rank)
-            study_progress_string     := strings.concatenate({ study_exp_string, "/", study_cost_string }, context.temp_allocator)
+            health_string             := strings.concatenate({ now_health_string, "/", max_health_string }, context.temp_allocator)
+            study_progress_string     := strings.concatenate({ study_exp_string,  "/", study_cost_string }, context.temp_allocator)
 
             ui.insert_text(g.ui.ctx, &g.ui.player_health,       HEALTH_OFFSET,        health_string)
             ui.insert_text(g.ui.ctx, &g.ui.action_points,       ACTION_POINTS_OFFSET, action_points_string)
@@ -944,7 +1074,31 @@ do_camp_fire :: proc(p: ^platform.Platform, g: ^Game) {
             ui.label(g.ui.ctx, g.ui.action_points)
 
             if ui.button(g.ui.ctx, g.ui.continue_journey) {
-                __push_forward(g)
+                wizard.restore_spell_arena(
+                    &player_entity.arena,
+                    wizard.get_elements(g.player),
+                )
+
+                adventure.advance_to_next_stage(&g.adventure)
+
+                wizard.delete_spell_arena(entity.enemy(&g.entities).arena)
+
+                stage := adventure.stage(&g.adventure)
+
+                entity.enemy(&g.entities)^ = {
+                    health = stage.enemy_health,
+                    arena  = wizard.make_spell_arena(
+                        g.world_id,
+                        stage.arena_layout,
+                        stage.elements,
+                        g.arena_offsets[.Enemy],
+                    ),
+                }
+
+                g.state                 = .Battle
+                g.entities.turn         = .Player
+                g.have_setup_camp       = false
+                g.particle_system.count = 0
             }
 
             {
@@ -953,12 +1107,10 @@ do_camp_fire :: proc(p: ^platform.Platform, g: ^Game) {
                 if ui.button(g.ui.ctx, g.ui.rest, g.has_rested) {
                     g.has_rested = true
 
-                    player_entity.health = min(player_entity.health + 20, 100)
+                    restored_health := int(f32(max_health) * 0.2)
+                    new_health      := player_entity.health + restored_health
 
-                    wizard.restore_spell_arena(
-                        &player_entity.arena,
-                        wizard.get_elements(g.player),
-                    )
+                    player_entity.health = min(new_health, max_health)
                 }
 
                 ui.label(g.ui.ctx, g.ui.player_health)
@@ -998,6 +1150,12 @@ do_camp_fire :: proc(p: ^platform.Platform, g: ^Game) {
                         g.player.grimoire.exp   = 0
 
                         g.player.rank = cast(wizard.Rank) min(cast(int) g.player.rank + 1, cast(int) wizard.Rank.Red)
+
+                        // TODO: Upgrade the player's arena
+                        // entity.player(&g.entities)
+
+                        health_difference   := max_health - player_entity.health
+                        player_entity.health = wizard.get_max_health(g.player) - health_difference
                     }
                 }
 
@@ -1026,8 +1184,8 @@ hit_block :: proc(g: ^Game, block: ^wizard.Spell_Block) {
     __hit_block :: proc(g: ^Game, block: ^wizard.Spell_Block) {
         ball_info := BALL_INFO[g.ball.type]
 
-        current := current_entity(g)
-          other :=   other_entity(g)
+        current := entity.current(&g.entities)
+          other := entity.other  (&g.entities)
 
         hit_sound: Audio
 
@@ -1063,7 +1221,7 @@ hit_block :: proc(g: ^Game, block: ^wizard.Spell_Block) {
 
         damage_mult: int
 
-        switch g.turn {
+        switch g.entities.turn {
             case .Player: damage_mult = int(g.player.rank)
             case .Enemy:  damage_mult = 1
         }
@@ -1078,7 +1236,7 @@ hit_block :: proc(g: ^Game, block: ^wizard.Spell_Block) {
         play_sound(hit_sound)
     }
 
-    current := current_entity(g)
+    current := entity.current(&g.entities)
 
     switch block.status {
         case .Charged: fallthrough
