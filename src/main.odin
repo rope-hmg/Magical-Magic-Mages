@@ -40,16 +40,6 @@ main :: proc() {
 // Game
 // ----------------------------------------------
 
-Sounds :: struct {
-    hit_wall:      Audio,
-    hit_basic:     Audio,
-    hit_frozen:    Audio,
-    hit_refresher: Audio,
-    hit_activator: Audio,
-    hit_freezer:   Audio,
-    hit_poisoner:  Audio,
-}
-
 Game :: struct {
     state: enum {
         Title,
@@ -62,11 +52,17 @@ Game :: struct {
 
     adventure: adventure.Adventure,
 
-    // Application Stuff
-    audio_device:  sdl3.AudioDeviceID,
-
     // Assets
-    sounds:        Sounds,
+    sounds: struct {
+        hit_wall:      platform.Audio,
+        hit_basic:     platform.Audio,
+        hit_frozen:    platform.Audio,
+        hit_refresher: platform.Audio,
+        hit_activator: platform.Audio,
+        hit_freezer:   platform.Audio,
+        hit_poisoner:  platform.Audio,
+    },
+
     ball_textures: [Ball_Type]^sdl3.Texture,
 
     block_textures: [wizard.Block_Element][wizard.Block_Shape]^sdl3.Texture,
@@ -147,200 +143,189 @@ Game :: struct {
 }
 
 init :: proc(p: ^platform.Platform, g: ^Game) {
-    // TODO: Maybe need to have a `desired_audio_spec`
-    g.audio_device = sdl3.OpenAudioDevice(sdl3.AUDIO_DEVICE_DEFAULT_PLAYBACK, nil)
+    g.ui.ctx = ui.make_context(
+        p.renderer,
+        p.text_engine,
+        ttf.OpenFont("assets/fonts/Kenney Pixel.ttf", 24),
+        &p.mouse,
+    )
+    g.ui.ctx.text_padding = 2
+    g.ui.ctx.spacing      = 2
 
-    if g.audio_device == 0 {
-        fmt.println("Unable to open audio device:")
-        fmt.println(sdl3.GetError())
-    } else {
-        output_format: sdl3.AudioSpec
-        sdl3.GetAudioDeviceFormat(g.audio_device, &output_format, nil)
+    red   := graphics.rgb(200,  60,  60)
+    green := graphics.rgb( 60, 200,  60)
+    blue  := graphics.rgb( 60,  60, 200)
+    grey  := graphics.rgb(200, 200, 200)
 
-        g.ui.ctx = ui.make_context(
-            p.renderer,
-            p.text_engine,
-            ttf.OpenFont("assets/fonts/Kenney Pixel.ttf", 24),
-            &p.mouse,
-        )
-        g.ui.ctx.text_padding = 2
-        g.ui.ctx.spacing      = 2
+    // Battle UI
+    g.ui.player_health = ui.create_label(g.ui.ctx, "Health: ", red)
+    g.ui.player_damage = ui.create_label(g.ui.ctx, "Damage: ", green)
+    g.ui.others_health = ui.create_label(g.ui.ctx, "Health: ", red)
+    g.ui.others_damage = ui.create_label(g.ui.ctx, "Damage: ", green)
 
-        red   := graphics.rgb(200,  60,  60)
-        green := graphics.rgb( 60, 200,  60)
-        blue  := graphics.rgb( 60,  60, 200)
-        grey  := graphics.rgb(200, 200, 200)
+    // Title Screen UI
+    g.ui.play    = ui.create_button(g.ui.ctx, "Play",    green)
+    g.ui.options = ui.create_button(g.ui.ctx, "Options", grey)
+    g.ui.quit    = ui.create_button(g.ui.ctx, "Quit",    grey)
 
-        // Battle UI
-        g.ui.player_health = ui.create_label(g.ui.ctx, "Health: ", red)
-        g.ui.player_damage = ui.create_label(g.ui.ctx, "Damage: ", green)
-        g.ui.others_health = ui.create_label(g.ui.ctx, "Health: ", red)
-        g.ui.others_damage = ui.create_label(g.ui.ctx, "Damage: ", green)
+    // Character Select UI
+    g.ui.select_character = ui.create_label(g.ui.ctx, "Select Character", blue)
+    g.ui.select_weapon    = ui.create_label(g.ui.ctx, "Select Weapon", blue)
 
-        // Title Screen UI
-        g.ui.play    = ui.create_button(g.ui.ctx, "Play",    green)
-        g.ui.options = ui.create_button(g.ui.ctx, "Options", grey)
-        g.ui.quit    = ui.create_button(g.ui.ctx, "Quit",    grey)
+    // Camp Fire UI
+    g.ui.action_points      = ui.create_label (g.ui.ctx, "Action Points: ",  grey)
+    g.ui.continue_journey   = ui.create_button(g.ui.ctx, "Continue Journey", red)
+    g.ui.rest               = ui.create_button(g.ui.ctx, "Rest and Recover", red)
+    g.ui.investigate        = ui.create_button(g.ui.ctx, "Investigate",      green)
+    g.ui.study              = ui.create_button(g.ui.ctx, "Study Grimoire",   blue)
+    g.ui.current_rank       = ui.create_label (g.ui.ctx, "Rank: ",           grey)
+    g.ui.study_exp          = ui.create_label (g.ui.ctx, "Progress: ",       grey)
+    g.ui.study_cost         = ui.create_label (g.ui.ctx, "Cost: ",           grey)
+    g.ui.investigation_cost = ui.create_label (g.ui.ctx, "Cost: ",           grey)
 
-        // Character Select UI
-        g.ui.select_character = ui.create_label(g.ui.ctx, "Select Character", blue)
-        g.ui.select_weapon    = ui.create_label(g.ui.ctx, "Select Weapon", blue)
-
-        // Camp Fire UI
-        g.ui.action_points      = ui.create_label (g.ui.ctx, "Action Points: ",  grey)
-        g.ui.continue_journey   = ui.create_button(g.ui.ctx, "Continue Journey", red)
-        g.ui.rest               = ui.create_button(g.ui.ctx, "Rest and Recover", red)
-        g.ui.investigate        = ui.create_button(g.ui.ctx, "Investigate",      green)
-        g.ui.study              = ui.create_button(g.ui.ctx, "Study Grimoire",   blue)
-        g.ui.current_rank       = ui.create_label (g.ui.ctx, "Rank: ",           grey)
-        g.ui.study_exp          = ui.create_label (g.ui.ctx, "Progress: ",       grey)
-        g.ui.study_cost         = ui.create_label (g.ui.ctx, "Cost: ",           grey)
-        g.ui.investigation_cost = ui.create_label (g.ui.ctx, "Cost: ",           grey)
-
-        g.sounds = {
-            hit_wall      = load_wav("assets/audio/hit_wall.wav",            g.audio_device, &output_format),
-            hit_basic     = load_wav("assets/audio/hit_basic_block.wav",     g.audio_device, &output_format),
-            hit_frozen    = load_wav("assets/audio/hit_critical_block.wav",  g.audio_device, &output_format),
-            hit_refresher = load_wav("assets/audio/hit_refresher_block.wav", g.audio_device, &output_format),
-            hit_activator = load_wav("assets/audio/hit_activator_block.wav", g.audio_device, &output_format),
-            hit_freezer   = load_wav("assets/audio/hit_freezer_block.wav",   g.audio_device, &output_format),
-            hit_poisoner  = load_wav("assets/audio/hit_poisoner_block.wav",  g.audio_device, &output_format),
-        }
-
-        world_def := box2d.DefaultWorldDef()
-        world_def.gravity = { 0.0, 20.0 }
-
-        g.world_id = box2d.CreateWorld(world_def)
-        g.arena_id = box2d.CreateBody(g.world_id, box2d.DefaultBodyDef())
-
-        wall_shape_def := box2d.DefaultShapeDef()
-        wall_shape_def.filter.categoryBits = physics.CATEGORY_WALL
-        wall_shape_def.filter.maskBits     = physics.CATEGORY_PARTICLE | physics.CATEGORY_BALL
-
-        g.arena_height        = f32(p.height) * wizard.ARENA_HEIGHT_FRACTION
-        g.arena_width         = f32(p.width)  * wizard.ARENA_WIDTH_FRACTION
-        g.scene_height        = f32(p.height) - g.arena_height
-        half_wall_height     := f32(p.height) - g.scene_height
-        g.half_wall_thickness = f32(8)
-
-        g.arena_offsets = {
-            .Player = {             0, g.scene_height },
-            .Enemy  = { g.arena_width, g.scene_height },
-        }
-
-        left_wall := physics.pixels_to_metres(sdl3.FRect {
-            x = g.half_wall_thickness,
-            y = half_wall_height + g.scene_height,
-            w = g.half_wall_thickness,
-            h = half_wall_height,
-        })
-
-        mid_wall := physics.pixels_to_metres(sdl3.FRect {
-            x = g.arena_width,
-            y = half_wall_height + g.scene_height,
-            w = g.half_wall_thickness,
-            h = half_wall_height,
-        })
-
-        right_wall := physics.pixels_to_metres(sdl3.FRect {
-            x = f32(p.width) - g.half_wall_thickness,
-            y = half_wall_height + g.scene_height,
-            w = g.half_wall_thickness,
-            h = half_wall_height,
-        })
-
-        ceiling := physics.pixels_to_metres(sdl3.FRect {
-            x = g.arena_width,
-            y = g.half_wall_thickness + g.scene_height,
-            w = g.arena_width,
-            h = g.half_wall_thickness
-        })
-
-        g.arena_walls = {
-            box2d.CreatePolygonShape(g.arena_id, wall_shape_def, box2d.MakeOffsetBox( left_wall.w,  left_wall.h, {  left_wall.x,  left_wall.y }, box2d.MakeRot(0))),
-            box2d.CreatePolygonShape(g.arena_id, wall_shape_def, box2d.MakeOffsetBox(  mid_wall.w,   mid_wall.h, {   mid_wall.x,   mid_wall.y }, box2d.MakeRot(0))),
-            box2d.CreatePolygonShape(g.arena_id, wall_shape_def, box2d.MakeOffsetBox(right_wall.w, right_wall.h, { right_wall.x, right_wall.y }, box2d.MakeRot(0))),
-            box2d.CreatePolygonShape(g.arena_id, wall_shape_def, box2d.MakeOffsetBox(   ceiling.w,    ceiling.h, {    ceiling.x,    ceiling.y }, box2d.MakeRot(0))),
-        }
-
-        g.ball_escape_vector = { 1, -1 }
-        g.ball_escape_speed  = 1.0
-
-        g.ball_type     = .Basic
-        g.ball_state    = .Picking_A_Spot
-        g.ball_textures = {
-            .Basic = image.LoadTexture(p.renderer, "assets/graphics/ballGrey.png"),
-            .Blue  = image.LoadTexture(p.renderer, "assets/graphics/ballBlue.png"),
-        }
-
-        g.block_textures = {
-            .Basic = {
-                .Diamond   = image.LoadTexture(p.renderer, "assets/graphics/element_grey_diamond.png"),
-                .Pentagon  = image.LoadTexture(p.renderer, "assets/graphics/element_grey_polygon.png"),
-                .Square    = image.LoadTexture(p.renderer, "assets/graphics/element_grey_square.png"),
-                .Rectangle = image.LoadTexture(p.renderer, "assets/graphics/element_grey_rectangle.png"),
-            },
-            .Fire = {
-                .Diamond   = image.LoadTexture(p.renderer, "assets/graphics/element_red_diamond.png"),
-                .Pentagon  = image.LoadTexture(p.renderer, "assets/graphics/element_red_polygon.png"),
-                .Square    = image.LoadTexture(p.renderer, "assets/graphics/element_red_square.png"),
-                .Rectangle = image.LoadTexture(p.renderer, "assets/graphics/element_red_rectangle.png"),
-            },
-            .Healing = {
-                .Diamond   = image.LoadTexture(p.renderer, "assets/graphics/element_green_diamond.png"),
-                .Pentagon  = image.LoadTexture(p.renderer, "assets/graphics/element_green_polygon.png"),
-                .Square    = image.LoadTexture(p.renderer, "assets/graphics/element_green_square.png"),
-                .Rectangle = image.LoadTexture(p.renderer, "assets/graphics/element_green_rectangle.png"),
-            },
-            .Electric = {
-                .Diamond   = image.LoadTexture(p.renderer, "assets/graphics/element_yellow_diamond.png"),
-                .Pentagon  = image.LoadTexture(p.renderer, "assets/graphics/element_yellow_polygon.png"),
-                .Square    = image.LoadTexture(p.renderer, "assets/graphics/element_yellow_square.png"),
-                .Rectangle = image.LoadTexture(p.renderer, "assets/graphics/element_yellow_rectangle.png"),
-            },
-            .Ice = {
-                .Diamond   = image.LoadTexture(p.renderer, "assets/graphics/element_blue_diamond.png"),
-                .Pentagon  = image.LoadTexture(p.renderer, "assets/graphics/element_blue_polygon.png"),
-                .Square    = image.LoadTexture(p.renderer, "assets/graphics/element_blue_square.png"),
-                .Rectangle = image.LoadTexture(p.renderer, "assets/graphics/element_blue_rectangle.png"),
-            },
-            .Poison = {
-                .Diamond   = image.LoadTexture(p.renderer, "assets/graphics/element_purple_diamond.png"),
-                .Pentagon  = image.LoadTexture(p.renderer, "assets/graphics/element_purple_polygon.png"),
-                .Square    = image.LoadTexture(p.renderer, "assets/graphics/element_purple_square.png"),
-                .Rectangle = image.LoadTexture(p.renderer, "assets/graphics/element_purple_rectangle.png"),
-            },
-        }
-
-        g.burning_textures = {
-            image.LoadTexture(p.renderer, "assets/graphics/particles/flame_01.png"),
-            image.LoadTexture(p.renderer, "assets/graphics/particles/flame_02.png"),
-            image.LoadTexture(p.renderer, "assets/graphics/particles/flame_03.png"),
-            image.LoadTexture(p.renderer, "assets/graphics/particles/flame_04.png"),
-        }
-
-        g.burning_animation_time = f32(0.2)
-
-        for texture in g.burning_textures {
-            sdl3.SetTextureColorMod(texture, 255, 0, 0)
-        }
-
-        g.particle_textures = {
-            image.LoadTexture(p.renderer, "assets/graphics/particles/star_01.png"),
-            image.LoadTexture(p.renderer, "assets/graphics/particles/star_02.png"),
-            image.LoadTexture(p.renderer, "assets/graphics/particles/star_03.png"),
-            image.LoadTexture(p.renderer, "assets/graphics/particles/star_04.png"),
-            image.LoadTexture(p.renderer, "assets/graphics/particles/star_05.png"),
-            image.LoadTexture(p.renderer, "assets/graphics/particles/star_06.png"),
-            image.LoadTexture(p.renderer, "assets/graphics/particles/star_07.png"),
-            image.LoadTexture(p.renderer, "assets/graphics/particles/star_08.png"),
-            image.LoadTexture(p.renderer, "assets/graphics/particles/star_09.png"),
-        }
-
-        g.particle_system = physics.make_particle_system(g.world_id)
-        g.status_texture = image.LoadTexture(p.renderer, "assets/graphics/particles/circle_02.png")
-        g.select_texture = image.LoadTexture(p.renderer, "assets/graphics/selectorA.png")
+    g.sounds = {
+        hit_wall      = platform.load_wav("assets/audio/hit_wall.wav",            p.audio_device, &p.output_format),
+        hit_basic     = platform.load_wav("assets/audio/hit_basic_block.wav",     p.audio_device, &p.output_format),
+        hit_frozen    = platform.load_wav("assets/audio/hit_critical_block.wav",  p.audio_device, &p.output_format),
+        hit_refresher = platform.load_wav("assets/audio/hit_refresher_block.wav", p.audio_device, &p.output_format),
+        hit_activator = platform.load_wav("assets/audio/hit_activator_block.wav", p.audio_device, &p.output_format),
+        hit_freezer   = platform.load_wav("assets/audio/hit_freezer_block.wav",   p.audio_device, &p.output_format),
+        hit_poisoner  = platform.load_wav("assets/audio/hit_poisoner_block.wav",  p.audio_device, &p.output_format),
     }
+
+    world_def := box2d.DefaultWorldDef()
+    world_def.gravity = { 0.0, 20.0 }
+
+    g.world_id = box2d.CreateWorld(world_def)
+    g.arena_id = box2d.CreateBody(g.world_id, box2d.DefaultBodyDef())
+
+    wall_shape_def := box2d.DefaultShapeDef()
+    wall_shape_def.filter.categoryBits = physics.CATEGORY_WALL
+    wall_shape_def.filter.maskBits     = physics.CATEGORY_PARTICLE | physics.CATEGORY_BALL
+
+    g.arena_height        = f32(p.height) * wizard.ARENA_HEIGHT_FRACTION
+    g.arena_width         = f32(p.width)  * wizard.ARENA_WIDTH_FRACTION
+    g.scene_height        = f32(p.height) - g.arena_height
+    half_wall_height     := f32(p.height) - g.scene_height
+    g.half_wall_thickness = f32(8)
+
+    g.arena_offsets = {
+        .Player = {             0, g.scene_height },
+        .Enemy  = { g.arena_width, g.scene_height },
+    }
+
+    left_wall := physics.pixels_to_metres(sdl3.FRect {
+        x = g.half_wall_thickness,
+        y = half_wall_height + g.scene_height,
+        w = g.half_wall_thickness,
+        h = half_wall_height,
+    })
+
+    mid_wall := physics.pixels_to_metres(sdl3.FRect {
+        x = g.arena_width,
+        y = half_wall_height + g.scene_height,
+        w = g.half_wall_thickness,
+        h = half_wall_height,
+    })
+
+    right_wall := physics.pixels_to_metres(sdl3.FRect {
+        x = f32(p.width) - g.half_wall_thickness,
+        y = half_wall_height + g.scene_height,
+        w = g.half_wall_thickness,
+        h = half_wall_height,
+    })
+
+    ceiling := physics.pixels_to_metres(sdl3.FRect {
+        x = g.arena_width,
+        y = g.half_wall_thickness + g.scene_height,
+        w = g.arena_width,
+        h = g.half_wall_thickness
+    })
+
+    g.arena_walls = {
+        box2d.CreatePolygonShape(g.arena_id, wall_shape_def, box2d.MakeOffsetBox( left_wall.w,  left_wall.h, {  left_wall.x,  left_wall.y }, box2d.MakeRot(0))),
+        box2d.CreatePolygonShape(g.arena_id, wall_shape_def, box2d.MakeOffsetBox(  mid_wall.w,   mid_wall.h, {   mid_wall.x,   mid_wall.y }, box2d.MakeRot(0))),
+        box2d.CreatePolygonShape(g.arena_id, wall_shape_def, box2d.MakeOffsetBox(right_wall.w, right_wall.h, { right_wall.x, right_wall.y }, box2d.MakeRot(0))),
+        box2d.CreatePolygonShape(g.arena_id, wall_shape_def, box2d.MakeOffsetBox(   ceiling.w,    ceiling.h, {    ceiling.x,    ceiling.y }, box2d.MakeRot(0))),
+    }
+
+    g.ball_escape_vector = { 1, -1 }
+    g.ball_escape_speed  = 1.0
+
+    g.ball_type     = .Basic
+    g.ball_state    = .Picking_A_Spot
+    g.ball_textures = {
+        .Basic = image.LoadTexture(p.renderer, "assets/graphics/ballGrey.png"),
+        .Blue  = image.LoadTexture(p.renderer, "assets/graphics/ballBlue.png"),
+    }
+
+    g.block_textures = {
+        .Basic = {
+            .Diamond   = image.LoadTexture(p.renderer, "assets/graphics/element_grey_diamond.png"),
+            .Pentagon  = image.LoadTexture(p.renderer, "assets/graphics/element_grey_polygon.png"),
+            .Square    = image.LoadTexture(p.renderer, "assets/graphics/element_grey_square.png"),
+            .Rectangle = image.LoadTexture(p.renderer, "assets/graphics/element_grey_rectangle.png"),
+        },
+        .Fire = {
+            .Diamond   = image.LoadTexture(p.renderer, "assets/graphics/element_red_diamond.png"),
+            .Pentagon  = image.LoadTexture(p.renderer, "assets/graphics/element_red_polygon.png"),
+            .Square    = image.LoadTexture(p.renderer, "assets/graphics/element_red_square.png"),
+            .Rectangle = image.LoadTexture(p.renderer, "assets/graphics/element_red_rectangle.png"),
+        },
+        .Healing = {
+            .Diamond   = image.LoadTexture(p.renderer, "assets/graphics/element_green_diamond.png"),
+            .Pentagon  = image.LoadTexture(p.renderer, "assets/graphics/element_green_polygon.png"),
+            .Square    = image.LoadTexture(p.renderer, "assets/graphics/element_green_square.png"),
+            .Rectangle = image.LoadTexture(p.renderer, "assets/graphics/element_green_rectangle.png"),
+        },
+        .Electric = {
+            .Diamond   = image.LoadTexture(p.renderer, "assets/graphics/element_yellow_diamond.png"),
+            .Pentagon  = image.LoadTexture(p.renderer, "assets/graphics/element_yellow_polygon.png"),
+            .Square    = image.LoadTexture(p.renderer, "assets/graphics/element_yellow_square.png"),
+            .Rectangle = image.LoadTexture(p.renderer, "assets/graphics/element_yellow_rectangle.png"),
+        },
+        .Ice = {
+            .Diamond   = image.LoadTexture(p.renderer, "assets/graphics/element_blue_diamond.png"),
+            .Pentagon  = image.LoadTexture(p.renderer, "assets/graphics/element_blue_polygon.png"),
+            .Square    = image.LoadTexture(p.renderer, "assets/graphics/element_blue_square.png"),
+            .Rectangle = image.LoadTexture(p.renderer, "assets/graphics/element_blue_rectangle.png"),
+        },
+        .Poison = {
+            .Diamond   = image.LoadTexture(p.renderer, "assets/graphics/element_purple_diamond.png"),
+            .Pentagon  = image.LoadTexture(p.renderer, "assets/graphics/element_purple_polygon.png"),
+            .Square    = image.LoadTexture(p.renderer, "assets/graphics/element_purple_square.png"),
+            .Rectangle = image.LoadTexture(p.renderer, "assets/graphics/element_purple_rectangle.png"),
+        },
+    }
+
+    g.burning_textures = {
+        image.LoadTexture(p.renderer, "assets/graphics/particles/flame_01.png"),
+        image.LoadTexture(p.renderer, "assets/graphics/particles/flame_02.png"),
+        image.LoadTexture(p.renderer, "assets/graphics/particles/flame_03.png"),
+        image.LoadTexture(p.renderer, "assets/graphics/particles/flame_04.png"),
+    }
+
+    g.burning_animation_time = f32(0.2)
+
+    for texture in g.burning_textures {
+        sdl3.SetTextureColorMod(texture, 255, 0, 0)
+    }
+
+    g.particle_textures = {
+        image.LoadTexture(p.renderer, "assets/graphics/particles/star_01.png"),
+        image.LoadTexture(p.renderer, "assets/graphics/particles/star_02.png"),
+        image.LoadTexture(p.renderer, "assets/graphics/particles/star_03.png"),
+        image.LoadTexture(p.renderer, "assets/graphics/particles/star_04.png"),
+        image.LoadTexture(p.renderer, "assets/graphics/particles/star_05.png"),
+        image.LoadTexture(p.renderer, "assets/graphics/particles/star_06.png"),
+        image.LoadTexture(p.renderer, "assets/graphics/particles/star_07.png"),
+        image.LoadTexture(p.renderer, "assets/graphics/particles/star_08.png"),
+        image.LoadTexture(p.renderer, "assets/graphics/particles/star_09.png"),
+    }
+
+    g.particle_system = physics.make_particle_system(g.world_id)
+    g.status_texture = image.LoadTexture(p.renderer, "assets/graphics/particles/circle_02.png")
+    g.select_texture = image.LoadTexture(p.renderer, "assets/graphics/selectorA.png")
 }
 
 quit :: proc(p: ^platform.Platform, g: ^Game) {
@@ -350,10 +335,6 @@ quit :: proc(p: ^platform.Platform, g: ^Game) {
         if g.ui.ctx.font != nil { ttf.CloseFont(g.ui.ctx.font) }
 
         free(g.ui.ctx)
-    }
-
-    if g.audio_device != 0 {
-        sdl3.CloseAudioDevice(g.audio_device)
     }
 }
 
@@ -847,7 +828,7 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
         user_data := box2d.Shape_GetUserData(event.shapeIdA)
 
         if user_data == nil {
-            play_sound(g.sounds.hit_wall)
+            platform.play_sound(g.sounds.hit_wall)
         } else {
             hit_block(g, cast(^wizard.Spell_Block) user_data)
         }
@@ -1086,7 +1067,7 @@ hit_block :: proc(g: ^Game, block: ^wizard.Spell_Block) {
         current := entity.current(&g.entities)
           other := entity.other  (&g.entities)
 
-        hit_sound: Audio
+        hit_sound: platform.Audio
 
         switch block.element {
             case .Basic:
@@ -1132,7 +1113,7 @@ hit_block :: proc(g: ^Game, block: ^wizard.Spell_Block) {
             current.arena.disabled += 1
         }
 
-        play_sound(hit_sound)
+        platform.play_sound(hit_sound)
     }
 
     current := entity.current(&g.entities)
@@ -1143,49 +1124,18 @@ hit_block :: proc(g: ^Game, block: ^wizard.Spell_Block) {
             __hit_block(g, block)
 
         case .Burning:
-            // TODO: play_sound(hit_burning_sound)
+            // TODO: platform.play_sound(hit_burning_sound)
             current.health -= 1
             block.status    = .None
 
             __hit_block(g, block)
 
         case .Frozen:
-            play_sound(g.sounds.hit_frozen)
+            platform.play_sound(g.sounds.hit_frozen)
             block.status = .None
 
         case .Electrified:
     }
-}
-
-Audio :: struct {
-    format:  sdl3.AudioSpec,
-    stream: ^sdl3.AudioStream,
-
-    buffer_data: [^]u8,
-    buffer_len:  i32,
-}
-
-load_wav :: proc(path: cstring, output_device: sdl3.AudioDeviceID, output_format: ^sdl3.AudioSpec) -> Audio {
-    audio_format: sdl3.AudioSpec
-    buffer_data:  [^]u8
-    buffer_len:   u32
-
-    sdl3.LoadWAV(path, &audio_format, &buffer_data, &buffer_len)
-
-    audio_stream := sdl3.CreateAudioStream(&audio_format, output_format)
-
-    sdl3.BindAudioStream(output_device, audio_stream)
-
-    return {
-        format      = audio_format,
-        stream      = audio_stream,
-        buffer_data = buffer_data,
-        buffer_len  = i32(buffer_len),
-    }
-}
-
-play_sound :: #force_inline proc(sound: Audio) {
-    sdl3.PutAudioStreamData(sound.stream, sound.buffer_data, sound.buffer_len)
 }
 
 Ball_State :: enum {
