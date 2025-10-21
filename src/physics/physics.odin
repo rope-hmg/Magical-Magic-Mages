@@ -3,6 +3,7 @@ package physics
 import "core:math/linalg/glsl"
 
 import "vendor:sdl3"
+import "vendor:box2d"
 
 CATEGORY_BALL:     u64: 0x00000000_00000001
 CATEGORY_PARTICLE: u64: 0x00000000_00000002
@@ -28,4 +29,24 @@ metres_to_pixels :: proc {
     metres_to_pixels_f32,
     metres_to_pixels_vec2,
     metres_to_pixels_rect,
+}
+
+render_textured_object :: proc(
+    renderer: ^sdl3.Renderer,
+    texture:  ^sdl3.Texture,
+    body_id:   box2d.BodyId,
+    shape_id:  box2d.ShapeId,
+) {
+    position := metres_to_pixels(box2d.Body_GetPosition(body_id))
+    aabb     := box2d.Shape_GetAABB(shape_id)
+    extent   := metres_to_pixels(aabb.upperBound - aabb.lowerBound)
+
+    rect := sdl3.FRect {
+        x = (position.x - extent.x / 2),
+        y = (position.y - extent.y / 2),
+        w = extent.x,
+        h = extent.y,
+    }
+
+    sdl3.RenderTexture(renderer, texture, nil, &rect)
 }

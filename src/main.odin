@@ -40,88 +40,6 @@ main :: proc() {
 // Game
 // ----------------------------------------------
 
-PARTICLE_POOL_SIZE     :: 256
-PARTICLE_GRAVITY_SCALE :: 0.11
-PARTICLE_DENSITY       :: 0.01
-PARTICLE_LIFETIME      :: 2.25
-
-Particle :: struct {
-    lifetime: f32,
-    texture:  ^sdl3.Texture,
-    colour:   graphics.Colour,
-    body_id:  box2d.BodyId,
-    shape_id: box2d.ShapeId,
-}
-
-Particle_System :: struct {
-    count:     int,
-    particles: [PARTICLE_POOL_SIZE]Particle,
-}
-
-make_particle_system :: proc(world_id: box2d.WorldId) -> ^Particle_System {
-    particle_system := new(Particle_System)
-
-    for i := 0; i < PARTICLE_POOL_SIZE; i += 1 {
-        body_def := box2d.DefaultBodyDef()
-        body_def.isEnabled    = false
-        body_def.type         = .dynamicBody
-        body_def.gravityScale = PARTICLE_GRAVITY_SCALE
-        body_id  := box2d.CreateBody(world_id, body_def)
-
-        shape_def := box2d.DefaultShapeDef()
-        shape_def.density             = PARTICLE_DENSITY
-        shape_def.filter.categoryBits = physics.CATEGORY_PARTICLE
-        shape_def.filter.maskBits     = physics.CATEGORY_BLOCK | physics.CATEGORY_WALL
-        shape_id  := box2d.CreateCircleShape(body_id, shape_def, box2d.Circle {
-            center = {},
-            radius = physics.pixels_to_metres(10),
-        })
-
-        particle_system.particles[i] = {
-            body_id  = body_id,
-            shape_id = shape_id,
-        }
-    }
-
-    return particle_system
-}
-
-spawn_particle :: proc(system: ^Particle_System, texture: ^sdl3.Texture, colour: graphics.Colour, position, velocity: glsl.vec2) {
-    if system.count < PARTICLE_POOL_SIZE - 1 {
-        particle := &system.particles[system.count]
-
-        particle.lifetime = PARTICLE_LIFETIME
-        particle.texture  = texture
-        particle.colour   = colour
-
-        box2d.Body_SetTransform     (particle.body_id, position, box2d.Body_GetRotation(particle.body_id))
-        box2d.Body_Enable           (particle.body_id)
-        box2d.Body_SetLinearVelocity(particle.body_id, velocity)
-
-        system.count += 1
-    }
-}
-
-render_textured_physics_object :: proc(
-    renderer: ^sdl3.Renderer,
-    texture:  ^sdl3.Texture,
-    body_id:   box2d.BodyId,
-    shape_id:  box2d.ShapeId,
-) {
-    position := physics.metres_to_pixels(box2d.Body_GetPosition(body_id))
-    aabb     := box2d.Shape_GetAABB(shape_id)
-    extent   := physics.metres_to_pixels(aabb.upperBound - aabb.lowerBound)
-
-    rect := sdl3.FRect {
-        x = (position.x - extent.x / 2),
-        y = (position.y - extent.y / 2),
-        w = extent.x,
-        h = extent.y,
-    }
-
-    sdl3.RenderTexture(renderer, texture, nil, &rect)
-}
-
 Sounds :: struct {
     hit_wall:      Audio,
     hit_basic:     Audio,
@@ -159,7 +77,7 @@ Game :: struct {
 
     particle_textures:   [9]^sdl3.Texture,
     particle_spawn_time: f32,
-    particle_system:     ^Particle_System,
+    particle_system:     ^physics.Particle_System,
 
     status_texture: ^sdl3.Texture,
     select_texture: ^sdl3.Texture,
@@ -419,13 +337,15 @@ init :: proc(p: ^platform.Platform, g: ^Game) {
             image.LoadTexture(p.renderer, "assets/graphics/particles/star_09.png"),
         }
 
-        g.particle_system = make_particle_system(g.world_id)
+        g.particle_system = physics.make_particle_system(g.world_id)
         g.status_texture = image.LoadTexture(p.renderer, "assets/graphics/particles/circle_02.png")
         g.select_texture = image.LoadTexture(p.renderer, "assets/graphics/selectorA.png")
     }
 }
 
 quit :: proc(p: ^platform.Platform, g: ^Game) {
+    physics.delete_particle_system(g.particle_system)
+
     if g.ui.ctx != nil {
         if g.ui.ctx.font != nil { ttf.CloseFont(g.ui.ctx.font) }
 
@@ -550,6 +470,9 @@ do_character_select :: proc(p: ^platform.Platform, g: ^Game) {
 
         for character, id in wizard.CHARACTERS {
             // TODO: Make this not gay
+            //       Which means removing the allocations, because we
+            //       all know gays love to allocate in the middle of
+            //       their loops.
             text_surface := ttf.RenderText_Solid(
                 g.ui.ctx.font,
                 cstring(raw_data(character.name)),
@@ -708,7 +631,7 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
         case .Flying_About_The_Place:
             ball_info := BALL_INFO[g.ball.type]
 
-            render_textured_physics_object(
+            physics.render_textured_object(
                 p.renderer,
                 g.ball_textures[g.ball.type],
                 g.ball.body_id,
@@ -733,9 +656,9 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
 
                 valid_colours := entity.current(&g.entities).arena.colours
 
-                spawn_particle(g.particle_system, rand.choice(g.particle_textures[:]), rand.choice(valid_colours), g.ball_position + back  * rand.float32(), back  * 2)
-                spawn_particle(g.particle_system, rand.choice(g.particle_textures[:]), rand.choice(valid_colours), g.ball_position + side1 * rand.float32(), side1 * 2)
-                spawn_particle(g.particle_system, rand.choice(g.particle_textures[:]), rand.choice(valid_colours), g.ball_position + side2 * rand.float32(), side2 * 2)
+                physics.spawn_particle(g.particle_system, rand.choice(g.particle_textures[:]), rand.choice(valid_colours), g.ball_position + back  * rand.float32(), back  * 2)
+                physics.spawn_particle(g.particle_system, rand.choice(g.particle_textures[:]), rand.choice(valid_colours), g.ball_position + side1 * rand.float32(), side1 * 2)
+                physics.spawn_particle(g.particle_system, rand.choice(g.particle_textures[:]), rand.choice(valid_colours), g.ball_position + side2 * rand.float32(), side2 * 2)
             }
 
             if physics.metres_to_pixels(g.ball_position.y) - ball_info.size_in_pixels /* / 2 */ > f32(p.height) {
@@ -796,7 +719,7 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
             if box2d.Body_IsEnabled(block.body_id) {
                 texture := g.block_textures[block.element][block.shape]
 
-                render_textured_physics_object(p.renderer, texture, block.body_id, block.shape_id)
+                physics.render_textured_object(p.renderer, texture, block.body_id, block.shape_id)
 
                 // position := box2d.Body_GetPosition(block.body_id)
                 // polygon  := box2d.Shape_GetPolygon(block.shape_id)
@@ -850,31 +773,7 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
     // !!! Particles !!!
     //
 
-    for i := 0; i < g.particle_system.count; i += 1 {
-        g.particle_system.particles[i].lifetime = max(0.0, g.particle_system.particles[i].lifetime - p.delta_seconds)
-    }
-
-    for i := g.particle_system.count - 1; i >= 0; i -= 1 {
-        particle := &g.particle_system.particles[i]
-        if particle.lifetime == 0 {
-            box2d.Body_Disable(particle.body_id)
-
-            g.particle_system.count -= 1
-            slice.swap(g.particle_system.particles[:], i, g.particle_system.count)
-        }
-    }
-
-    for i := 0; i < g.particle_system.count; i += 1 {
-        particle := g.particle_system.particles[i]
-        texture  := particle.texture
-        colour   := particle.colour
-
-        // NOTE: This seems like a dumb way to do this
-        // TODO: Check to see if there is a better way to do this
-        sdl3.SetTextureAlphaMod(texture, u8((particle.lifetime / 2.0) * 255.0))
-        sdl3.SetTextureColorMod(texture, colour.components.r, colour.components.g, colour.components.b)
-        render_textured_physics_object(p.renderer, texture, particle.body_id, particle.shape_id)
-    }
+    physics.update_and_render_particles(p.renderer, g.particle_system, p.delta_seconds)
 
     // ======================
     // !!! User Interface !!!
