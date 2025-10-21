@@ -532,18 +532,12 @@ do_character_select :: proc(p: ^platform.Platform, g: ^Game) {
                 ),
             }
 
-            g.state         = .Adventure_Select
-            g.entities.turn = .Player
+            g.state = .Adventure_Select
         }
     }
 }
 
-do_adventure_select :: proc(p: ^platform.Platform, g: ^Game) {
-    g.adventure.stage  = 0
-    g.adventure.stages = adventure.DRAGON_ADVENTURE
-
-    adventure.init(g.ui.ctx, &g.adventure)
-
+begin_next_stage :: proc(g: ^Gmae) {
     stage  := adventure.stage(&g.adventure)
     entity := entity.enemy(&g.entities)
 
@@ -559,7 +553,16 @@ do_adventure_select :: proc(p: ^platform.Platform, g: ^Game) {
         ),
     }
 
-    g.state = .Battle
+    g.state         = .Battle
+    g.entities.turn = .Player
+}
+
+do_adventure_select :: proc(p: ^platform.Platform, g: ^Game) {
+    g.adventure.stage  = 0
+    g.adventure.stages = adventure.DRAGON_ADVENTURE
+
+    adventure.init(g.ui.ctx, &g.adventure)
+    begin_next_stage(g)
 }
 
 do_battle :: proc(p: ^platform.Platform, g: ^Game) {
@@ -835,13 +838,6 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
     }
 }
 
-player_do_battle :: proc(p: ^platform.Platform, g: ^Game) {
-
-}
-
-enemy_do_battle :: proc(p: ^platform.Platform, g: ^Game) {
-}
-
 do_camp_fire :: proc(p: ^platform.Platform, g: ^Game) {
     should_camp := true
 
@@ -959,26 +955,11 @@ do_camp_fire :: proc(p: ^platform.Platform, g: ^Game) {
                     wizard.get_elements(g.player),
                 )
 
-                adventure.advance_to_next_stage(&g.adventure)
-
-                wizard.delete_spell_arena(entity.enemy(&g.entities).arena)
-
-                stage := adventure.stage(&g.adventure)
-
-                entity.enemy(&g.entities)^ = {
-                    health = stage.enemy_health,
-                    arena  = wizard.make_spell_arena(
-                        g.world_id,
-                        stage.arena_layout,
-                        stage.elements,
-                        g.arena_offsets[.Enemy],
-                    ),
-                }
-
-                g.state                 = .Battle
-                g.entities.turn         = .Player
                 g.have_setup_camp       = false
                 g.particle_system.count = 0
+
+                adventure.advance_to_next_stage(&g.adventure)
+                begin_next_stage(g)
             }
 
             {
@@ -1118,6 +1099,11 @@ hit_block :: proc(g: ^Game, block: ^wizard.Spell_Block) {
 
     current := entity.current(&g.entities)
 
+    switch g.entities.turn {
+        case .Player: CHARACTER_HOOKS[g.player.stats.character].on_block_hit(g, block)
+        case .Enemy:  /* ENEMY_HOOKS[stage(g.adventure).monster].on_block_hit(g, block) */
+    }
+
     switch block.status {
         case .Charged: fallthrough
         case .None:
@@ -1137,6 +1123,10 @@ hit_block :: proc(g: ^Game, block: ^wizard.Spell_Block) {
         case .Electrified:
     }
 }
+
+// ----------------------------------------------
+// Balls
+// ----------------------------------------------
 
 Ball_State :: enum {
     Picking_A_Spot,
@@ -1206,4 +1196,84 @@ create_ball :: proc(world_id: box2d.WorldId, position, velocity: glsl.vec2, type
     shape_id := box2d.CreateCircleShape(body_id, shape_def, circle)
 
     return { type, body_id, shape_id }
+}
+
+// ----------------------------------------------
+// Hooks
+// ----------------------------------------------
+
+// Cyclic imports require us to define this here :(
+On_Shoot_Ball_Fn :: proc(g: ^Game)
+On_Block_Hit_Fn  :: proc(g: ^Game, b: ^wizard.Spell_Block)
+
+@private _nil_on_shoot_ball :: proc(g: ^Game) {}
+@private _nil_on_block_hit  :: proc(g: ^Game, b: ^wizard.Spell_Block) {}
+
+Hooks :: struct {
+    on_shoot_ball: On_Shoot_Ball_Fn,
+    on_block_hit:  On_Block_Hit_Fn,
+}
+
+PLAYER_HOOKS := [wizard.Character]Hooks {
+    .Old_Man = {
+        on_shoot_ball = _nil_on_shoot_ball,
+        on_block_hit  = _nil_on_block_hit,
+    },
+
+    .Twins = {
+        on_shoot_ball = _nil_on_shoot_ball,
+        on_block_hit  = _nil_on_block_hit,
+    },
+}
+
+ENEMY_HOOKS := [wizard.Monster]Hooks {
+    .Electric_Spider = {
+        on_shoot_ball = _nil_on_shoot_ball,
+        on_block_hit  = _nil_on_block_hit,
+    },
+
+    .Skeleton = {
+        on_shoot_ball = _nil_on_shoot_ball,
+        on_block_hit  = _nil_on_block_hit,
+    },
+
+    .Poison_Toad = {
+        on_shoot_ball = _nil_on_shoot_ball,
+        on_block_hit  = _nil_on_block_hit,
+    },
+
+    .Lightning_Wolf = {
+        on_shoot_ball = _nil_on_shoot_ball,
+        on_block_hit  = _nil_on_block_hit,
+    },
+
+    .Goblin_Shaman = {
+        on_shoot_ball = _nil_on_shoot_ball,
+        on_block_hit  = _nil_on_block_hit,
+    },
+
+    .Troll = {
+        on_shoot_ball = _nil_on_shoot_ball,
+        on_block_hit  = _nil_on_block_hit,
+    },
+
+    .Fire_Dragon_Baby = {
+        on_shoot_ball = _nil_on_shoot_ball,
+        on_block_hit  = _nil_on_block_hit,
+    },
+
+    .Fire_Dragon = {
+        on_shoot_ball = _nil_on_shoot_ball,
+        on_block_hit  = _nil_on_block_hit,
+    },
+
+    .Ice_Dragon_Baby = {
+        on_shoot_ball = _nil_on_shoot_ball,
+        on_block_hit  = _nil_on_block_hit,
+    },
+
+    .Ice_Dragon = {
+        on_shoot_ball = _nil_on_shoot_ball,
+        on_block_hit  = _nil_on_block_hit,
+    }
 }

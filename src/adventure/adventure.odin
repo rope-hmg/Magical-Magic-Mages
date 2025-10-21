@@ -29,7 +29,7 @@ Stage :: struct {
     arena_layout_data: []u8,
     name:              string,
     arena_layout:      wizard.Arena_Layout,
-    label:              ui.Label,
+    label:             ui.Label,
 
     // animation: // Animation,
     enemy_health: int,
