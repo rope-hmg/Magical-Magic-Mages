@@ -31,6 +31,8 @@ Stage :: struct {
     arena_layout:      wizard.Arena_Layout,
     label:             ui.Label,
 
+    monster: wizard.Monster,
+
     // animation: // Animation,
     enemy_health: int,
     is_boss:      bool,

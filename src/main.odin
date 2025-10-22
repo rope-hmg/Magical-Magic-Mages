@@ -255,8 +255,7 @@ init :: proc(p: ^platform.Platform, g: ^Game) {
     g.ball_type     = .Basic
     g.ball_state    = .Picking_A_Spot
     g.ball_textures = {
-        .Basic = image.LoadTexture(p.renderer, "assets/graphics/ballGrey.png"),
-        .Blue  = image.LoadTexture(p.renderer, "assets/graphics/ballBlue.png"),
+        .Basic = image.LoadTexture(p.renderer, "assets/graphics/particles/circle_03.png"),
     }
 
     g.block_textures = {
@@ -537,7 +536,7 @@ do_character_select :: proc(p: ^platform.Platform, g: ^Game) {
     }
 }
 
-begin_next_stage :: proc(g: ^Gmae) {
+begin_next_stage :: proc(g: ^Game) {
     stage  := adventure.stage(&g.adventure)
     entity := entity.enemy(&g.entities)
 
@@ -608,7 +607,14 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
             sdl3.RenderTexture(p.renderer, g.ball_textures[g.ball_type], nil, &rect)
 
             if platform.button_released(p.mouse, .Left) {
-                g.ball       = create_ball(g.world_id, g.ball_position, platform.mouse_position(p.mouse) - g.ball_position, g.ball_type)
+                character := g.player.stats.character
+                stage     := adventure.stage(&g.adventure)
+
+                switch g.entities.turn {
+                    case .Player: PLAYER_HOOKS[character    ].on_shoot_ball(p, g)
+                    case .Enemy:   ENEMY_HOOKS[stage.monster].on_shoot_ball(p, g)
+                }
+
                 g.ball_state = .Flying_About_The_Place
             }
 
@@ -645,13 +651,13 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                 physics.spawn_particle(g.particle_system, rand.choice(g.particle_textures[:]), rand.choice(valid_colours), g.ball_position + side2 * rand.float32(), side2 * 2)
             }
 
+            // If the ball has fallen off the bottom of the arena then turn is over.
             if physics.metres_to_pixels(g.ball_position.y) - ball_info.size_in_pixels /* / 2 */ > f32(p.height) {
                 g.ball_state        = .Picking_A_Spot
                 g.ball_escape_speed = 1.0
 
                 box2d.DestroyBody(g.ball.body_id)
                 current := entity.current(&g.entities)
-                  other := entity.other  (&g.entities)
 
                 if current.arena.disabled == len(current.arena.blocks) {
                     elements: wizard.Elements
@@ -664,25 +670,40 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                     wizard.restore_spell_arena(&current.arena, elements)
                 }
 
-                // Don't apply damage if it killed itself
-                if entity.enemy(&g.entities).health == 0 {
-                    g.state = .Camp_Fire
-                } else {
+                enemy := entity.enemy(&g.entities)
+
+                // We should only apply the damage if the enemy is still alive
+                // This may seem pointless, but the enemy can kill itself. This
+                // saves the player from being hurt by dead enemies.
+                if enemy.health != 0 {
+                    other         := entity.other(&g.entities)
                     other.health   = max(other.health - current.damage, 0)
                     current.damage = 0
+                }
 
-                    if entity.enemy(&g.entities).health == 0 {
-                        g.state = .Camp_Fire
-                    }
+                if enemy.health == 0 {
+                    g.state = .Camp_Fire
+                }
+
+                character := g.player.stats.character
+                stage     := adventure.stage(&g.adventure)
+
+                switch g.entities.turn {
+                    case .Player: PLAYER_HOOKS[character    ].on_turn_end(p, g)
+                    case .Enemy:   ENEMY_HOOKS[stage.monster].on_turn_end(p, g)
                 }
 
                 entity.advance_turn(&g.entities)
 
-                // if g.turn == .Player {
-                //     g.ball_type = g.ball_type == .Basic ? .Blue : .Basic
-                // }
+                switch g.entities.turn {
+                    case .Player: PLAYER_HOOKS[character    ].on_turn_start(p, g)
+                    case .Enemy:   ENEMY_HOOKS[stage.monster].on_turn_start(p, g)
+                }
             }
 
+            // If the ball's physics body has gone to sleep then it has got stuck
+            // somewhere. We try to give it a little nudge, and increase the power
+            // incase it didn't make it out.
             if !box2d.Body_IsAwake(g.ball.body_id) {
                 box2d.Body_SetLinearVelocity(g.ball.body_id, g.ball_escape_vector * g.ball_escape_speed)
                 box2d.Body_SetAwake         (g.ball.body_id, true)
@@ -833,7 +854,7 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
         if user_data == nil {
             platform.play_sound(g.sounds.hit_wall)
         } else {
-            hit_block(g, cast(^wizard.Spell_Block) user_data)
+            hit_block(p, g, cast(^wizard.Spell_Block) user_data)
         }
     }
 }
@@ -1041,7 +1062,7 @@ do_post_game :: proc(p: ^platform.Platform, g: ^Game) {
     g.state = .Title
 }
 
-hit_block :: proc(g: ^Game, block: ^wizard.Spell_Block) {
+hit_block :: proc(p: ^platform.Platform, g: ^Game, block: ^wizard.Spell_Block) {
     __hit_block :: proc(g: ^Game, block: ^wizard.Spell_Block) {
         ball_info := BALL_INFO[g.ball.type]
 
@@ -1087,7 +1108,7 @@ hit_block :: proc(g: ^Game, block: ^wizard.Spell_Block) {
             case .Enemy:  damage_mult = 1
         }
 
-        current.damage += ball_info.basic_damage * damage_mult
+        current.damage += ball_info.damage * damage_mult
 
         if block.health == 0 {
             box2d.Body_Disable(block.body_id)
@@ -1099,9 +1120,12 @@ hit_block :: proc(g: ^Game, block: ^wizard.Spell_Block) {
 
     current := entity.current(&g.entities)
 
+    character := g.player.stats.character
+    stage     := adventure.stage(&g.adventure)
+
     switch g.entities.turn {
-        case .Player: CHARACTER_HOOKS[g.player.stats.character].on_block_hit(g, block)
-        case .Enemy:  /* ENEMY_HOOKS[stage(g.adventure).monster].on_block_hit(g, block) */
+        case .Player: PLAYER_HOOKS[character    ].on_block_hit(p, g, block)
+        case .Enemy:   ENEMY_HOOKS[stage.monster].on_block_hit(p, g, block)
     }
 
     switch block.status {
@@ -1124,6 +1148,30 @@ hit_block :: proc(g: ^Game, block: ^wizard.Spell_Block) {
     }
 }
 
+
+// ----------------------------------------------
+// Hooks
+// ----------------------------------------------
+
+// Cyclic imports require us to define this here :(
+On_Turn_Start_Fn :: proc(p: ^platform.Platform, g: ^Game)
+On_Turn_End_Fn   :: proc(p: ^platform.Platform, g: ^Game)
+On_Shoot_Ball_Fn :: proc(p: ^platform.Platform, g: ^Game)
+On_Block_Hit_Fn  :: proc(p: ^platform.Platform, g: ^Game, b: ^wizard.Spell_Block)
+
+@private _nil_on_turn_start :: proc(p: ^platform.Platform, g: ^Game) {}
+@private _nil_on_turn_end   :: proc(p: ^platform.Platform, g: ^Game) {}
+@private _nil_on_block_hit  :: proc(p: ^platform.Platform, g: ^Game, b: ^wizard.Spell_Block) {}
+
+@private _default_on_shoot_ball :: proc(p: ^platform.Platform, g: ^Game) {
+    g.ball = create_ball(
+        g.world_id,
+        g.ball_position,
+        platform.mouse_position(p.mouse) - g.ball_position,
+        g.ball_type,
+    )
+}
+
 // ----------------------------------------------
 // Balls
 // ----------------------------------------------
@@ -1136,12 +1184,15 @@ Ball_State :: enum {
 
 Ball_Type :: enum {
     Basic,
-    Blue,
+    // Vertical_Laser,
+    // Horizontal_Laser,
 }
 
 Ball_Info :: struct {
-       basic_damage: int,
-    critical_damage: int,
+    name:   string,
+    damage: int,
+
+    on_block_hit: On_Block_Hit_Fn,
 
     size_in_pixels: f32,
     friction:       f32,
@@ -1151,20 +1202,15 @@ Ball_Info :: struct {
 
 BALL_INFO := [Ball_Type]Ball_Info {
     .Basic = {
-           basic_damage = 2,
-        critical_damage = 3,
+        name   = "Magic Missile",
+        damage = 3,
+
+        on_block_hit = _nil_on_block_hit,
+
         size_in_pixels  = 16,
         friction        = 0.0,
         restitution     = 1.0,
     },
-
-    .Blue = {
-           basic_damage = 1,
-        critical_damage = 8,
-        size_in_pixels  = 32,
-        friction        = 0.0,
-        restitution     = 1.0,
-    }
 }
 
 Ball :: struct {
@@ -1199,81 +1245,100 @@ create_ball :: proc(world_id: box2d.WorldId, position, velocity: glsl.vec2, type
 }
 
 // ----------------------------------------------
-// Hooks
+// Character Hooks
 // ----------------------------------------------
 
-// Cyclic imports require us to define this here :(
-On_Shoot_Ball_Fn :: proc(g: ^Game)
-On_Block_Hit_Fn  :: proc(g: ^Game, b: ^wizard.Spell_Block)
-
-@private _nil_on_shoot_ball :: proc(g: ^Game) {}
-@private _nil_on_block_hit  :: proc(g: ^Game, b: ^wizard.Spell_Block) {}
-
-Hooks :: struct {
+Character_Hooks :: struct {
+    on_turn_start: On_Turn_Start_Fn,
+    on_turn_end:   On_Turn_End_Fn,
     on_shoot_ball: On_Shoot_Ball_Fn,
     on_block_hit:  On_Block_Hit_Fn,
 }
 
-PLAYER_HOOKS := [wizard.Character]Hooks {
+PLAYER_HOOKS := [wizard.Character]Character_Hooks {
     .Old_Man = {
-        on_shoot_ball = _nil_on_shoot_ball,
+        on_turn_start = _nil_on_turn_start,
+        on_turn_end   = _nil_on_turn_end,
+        on_shoot_ball = _default_on_shoot_ball,
         on_block_hit  = _nil_on_block_hit,
     },
 
     .Twins = {
-        on_shoot_ball = _nil_on_shoot_ball,
+        on_turn_start = _nil_on_turn_start,
+        on_turn_end   = _nil_on_turn_end,
+        on_shoot_ball = _default_on_shoot_ball,
         on_block_hit  = _nil_on_block_hit,
     },
 }
 
-ENEMY_HOOKS := [wizard.Monster]Hooks {
+ENEMY_HOOKS := [wizard.Monster]Character_Hooks {
     .Electric_Spider = {
-        on_shoot_ball = _nil_on_shoot_ball,
+        on_turn_start = _nil_on_turn_start,
+        on_turn_end   = _nil_on_turn_end,
+        on_shoot_ball = _default_on_shoot_ball,
         on_block_hit  = _nil_on_block_hit,
     },
 
     .Skeleton = {
-        on_shoot_ball = _nil_on_shoot_ball,
+        on_turn_start = _nil_on_turn_start,
+        on_turn_end   = _nil_on_turn_end,
+        on_shoot_ball = _default_on_shoot_ball,
         on_block_hit  = _nil_on_block_hit,
     },
 
     .Poison_Toad = {
-        on_shoot_ball = _nil_on_shoot_ball,
+        on_turn_start = _nil_on_turn_start,
+        on_turn_end   = _nil_on_turn_end,
+        on_shoot_ball = _default_on_shoot_ball,
         on_block_hit  = _nil_on_block_hit,
     },
 
     .Lightning_Wolf = {
-        on_shoot_ball = _nil_on_shoot_ball,
+        on_turn_start = _nil_on_turn_start,
+        on_turn_end   = _nil_on_turn_end,
+        on_shoot_ball = _default_on_shoot_ball,
         on_block_hit  = _nil_on_block_hit,
     },
 
     .Goblin_Shaman = {
-        on_shoot_ball = _nil_on_shoot_ball,
+        on_turn_start = _nil_on_turn_start,
+        on_turn_end   = _nil_on_turn_end,
+        on_shoot_ball = _default_on_shoot_ball,
         on_block_hit  = _nil_on_block_hit,
     },
 
     .Troll = {
-        on_shoot_ball = _nil_on_shoot_ball,
+        on_turn_start = _nil_on_turn_start,
+        on_turn_end   = _nil_on_turn_end,
+        on_shoot_ball = _default_on_shoot_ball,
         on_block_hit  = _nil_on_block_hit,
     },
 
     .Fire_Dragon_Baby = {
-        on_shoot_ball = _nil_on_shoot_ball,
+        on_turn_start = _nil_on_turn_start,
+        on_turn_end   = _nil_on_turn_end,
+        on_shoot_ball = _default_on_shoot_ball,
         on_block_hit  = _nil_on_block_hit,
     },
 
     .Fire_Dragon = {
-        on_shoot_ball = _nil_on_shoot_ball,
+        on_turn_start = _nil_on_turn_start,
+        on_turn_end   = _nil_on_turn_end,
+        on_shoot_ball = _default_on_shoot_ball,
         on_block_hit  = _nil_on_block_hit,
     },
 
     .Ice_Dragon_Baby = {
-        on_shoot_ball = _nil_on_shoot_ball,
+        on_turn_start = _nil_on_turn_start,
+        on_turn_end   = _nil_on_turn_end,
+        on_shoot_ball = _default_on_shoot_ball,
         on_block_hit  = _nil_on_block_hit,
     },
 
     .Ice_Dragon = {
-        on_shoot_ball = _nil_on_shoot_ball,
+        on_turn_start = _nil_on_turn_start,
+        on_turn_end   = _nil_on_turn_end,
+        on_shoot_ball = _default_on_shoot_ball,
         on_block_hit  = _nil_on_block_hit,
     }
 }
