@@ -17,9 +17,9 @@ clear; make run-ld
 * Desert Adventure
 * Ice    Adventure
 
-Shops, etc
+Sops, etc ( ͡ʘ ͜ʖ ͡ʘ)
 
-# BLOCKS
+# BLOCKS
 
 Blue   = Ice
 Purple = Poison
@@ -27,11 +27,11 @@ Red    = Fire
 Yellow = Lightning
 Green  = Restoration
 
-* Ice:         When hit, freezes some number of opponent blocks. Frozen blocks have to be hit multiple times to break
-* Poison:      When hit, adds poison dots to the opponent. Opponent takes `poison_damage` every turn they have a dot, dot is decreased by 1 every turn.
-* Fire:        When hit, either thaws caster's blocks, or burns blocks opponent's blocks. Burning blocks break after two turns. Hitting burning blocks does damage to the caster, but extinguishes the flame
-* Lightning:   When hit, zaps and breaks blocks in straight lines around itself (should it avoid self damaging affects applied to blocks?)
-* Restoration: When hit, restores some amount of the caster's health
+* **Ice**:         When hit, freezes some number of opponent blocks. Frozen blocks have to be hit multiple times to break
+* **Poison**:      When hit, adds poison dots to the opponent. Opponent takes `poison_damage` every turn they have a dot, dot is decreased by 1 every turn.
+* **Fire**:        When hit, either thaws caster's blocks, or burns blocks opponent's blocks. Burning blocks break after two turns. Hitting burning blocks does damage to the caster, but extinguishes the flame
+* **Lightning**:   When hit, zaps and breaks blocks in straight lines around itself (should it avoid self damaging affects applied to blocks?)
+* **Restoration**: When hit, restores some amount of the caster's health
 
 Ice Staff:
 * Increase number of frozen blocks
@@ -70,7 +70,3 @@ Restoration Staff:
 
 Restoration Ring:
 * Adds defence points which take damage first before the caster does
-
-
-
-
