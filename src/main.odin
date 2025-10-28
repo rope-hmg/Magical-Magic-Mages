@@ -353,6 +353,30 @@ init :: proc(p: ^platform.Platform, g: ^Game) {
         image.LoadTexture(p.renderer, "assets/graphics/particles/flame_04.png"),
     }
 
+    for &ball in g.balls {
+        // brøther
+
+        ball_info := BALL_INFO[.Basic]
+        body_def  := box2d.DefaultBodyDef()
+        body_def.type           = .dynamicBody
+        body_def.isBullet       = true
+        body_def.fixedRotation  = false // Not sure about this?
+        body_def.isEnabled      = false
+
+        circle := box2d.Circle {
+            center = {},
+            radius = physics.pixels_to_metres(ball_info.size_in_pixels * 0.5)
+        }
+
+        shape_def := box2d.DefaultShapeDef()
+        shape_def.material.friction    = ball_info.friction
+        shape_def.material.restitution = ball_info.restitution
+        shape_def.enableHitEvents      = true
+
+        ball.body_id  = box2d.CreateBody(g.world_id, body_def)
+        ball.shape_id = box2d.CreateCircleShape(ball.body_id, shape_def, circle)
+    }
+
     g.burning_animation_time = f32(0.2)
 
     for texture in g.burning_textures {
@@ -723,7 +747,7 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                 // If the ball has fallen off the bottom of the arena then turn is over.
                 if physics.metres_to_pixels(ball_position.y) - ball_info.size_in_pixels /* / 2 */ > f32(p.height) {
                     // TODO: Bool Pool
-                    box2d.DestroyBody(ball.body_id)
+                    box2d.Body_Disable(ball.body_id)
 
                     // MFW Testicular Torsion
                     slice.swap(g.balls[:], g.ball_count, i)
@@ -1425,30 +1449,18 @@ Ball :: struct {
     shape_id:      box2d.ShapeId,
 }
 
-create_ball :: proc(world_id: box2d.WorldId, position, velocity: glsl.vec2, type: Ball_Type) -> Ball {
-    ball_info := BALL_INFO[type]
-    body_def  := box2d.DefaultBodyDef()
-    body_def.position       = physics.pixels_to_metres(position)
-    body_def.linearVelocity = physics.pixels_to_metres(velocity)
-    body_def.type           = .dynamicBody
-    body_def.isBullet       = true
-    body_def.fixedRotation  = false // Not sure about this?
+create_ball :: proc(g: ^Game, position, velocity: glsl.vec2) {
+    ball := &g.balls[g.ball_count]
 
-    circle := box2d.Circle {
-        center = {},
-        radius = physics.pixels_to_metres(ball_info.size_in_pixels * 0.5)
-    }
+    position := physics.pixels_to_metres(position)
+    velocity := physics.pixels_to_metres(velocity)
 
-    shape_def := box2d.DefaultShapeDef()
-    shape_def.material.friction    = ball_info.friction
-    shape_def.material.restitution = ball_info.restitution
-    shape_def.enableHitEvents      = true
+    box2d.Body_SetTransform     (ball.body_id, position, box2d.Body_GetRotation(ball.body_id))
+    box2d.Body_SetLinearVelocity(ball.body_id, velocity)
+    box2d.Body_Enable           (ball.body_id)
 
-    body_id  := box2d.CreateBody(world_id, body_def)
-    shape_id := box2d.CreateCircleShape(body_id, shape_def, circle)
+    ball.escape_vector = { 1, -1 }
+    ball.escape_speed  = f32(1.0)
 
-    escape_vector := glsl.vec2{ 1, -1 }
-    escape_speed  := f32(1.0)
-
-    return { escape_vector, escape_speed, type, body_id, shape_id }
+    g.ball_count += 1
 }

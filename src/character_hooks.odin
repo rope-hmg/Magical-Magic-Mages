@@ -1,5 +1,10 @@
 package main
 
+import "core:math/linalg/glsl"
+import "core:fmt"
+
+import "vendor:box2d"
+
 import "game:platform"
 import "game:wizard"
 
@@ -19,14 +24,28 @@ _nil_on_take_damage :: proc(p: ^platform.Platform, g: ^Game, d: ^int) {}
 _nil_on_take_poison :: proc(p: ^platform.Platform, g: ^Game, d: ^int) {}
 
 _default_on_shoot_ball :: proc(p: ^platform.Platform, g: ^Game) {
-    g.balls[g.ball_count] = create_ball(
-        g.world_id,
-        g.ball_position,
-        platform.mouse_position(p.mouse) - g.ball_position,
-        .Basic,
-    )
+    variable := glsl.normalize(platform.mouse_position(p.mouse) - g.ball_position)
+    num_balls := 2
 
-    g.ball_count += 1
+    SPREAD :: glsl.TAU / 8.0
+
+    // TODO: Make the numbers right Mason
+    step  := SPREAD / f32(num_balls)
+    angle := glsl.acos(glsl.dot(variable, glsl.vec2 { 1, 0 })) - SPREAD
+    fmt.println(step)
+
+    for i in 0..<num_balls {
+        r := box2d.MakeRot(angle + (step * f32(i)))
+        fuck := box2d.RotateVector(r, variable)
+
+        fmt.println(angle, fuck)
+
+        create_ball(
+            g,
+            g.ball_position,
+            fuck,
+        )
+    }
 }
 
 PLAYER_HOOKS := [wizard.Character]Character_Hooks {
