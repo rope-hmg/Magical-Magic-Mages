@@ -21,14 +21,15 @@ import "game:physics"
 import "game:platform"
 import "game:graphics"
 import "game:graphics/ui"
+import "game:relic"
 
 main :: proc() {
-    game: Game
+    game      := new(Game)
     game_name := name.get_name(); defer delete(game_name)
 
     platform.run_app(
         game_name,
-        &game,
+        game,
         init,
         quit,
         handle_event,
@@ -123,6 +124,17 @@ Game :: struct {
     arena_walls:     [4]box2d.ShapeId,
     player:          wizard.Wizard,
     entities:        entity.Entities,
+    relics:          relic.Relics,
+
+    ball_position:      glsl.vec2,
+    ball_escape_vector: glsl.vec2,
+    ball_escape_speed:  f32,
+    ball_type:          Ball_Type,
+    ball_state:         Ball_State,
+    ball:               Ball,
+
+       run_stats: Battle_Stats,
+    battle_stats: Battle_Stats,
 
     // Character Select
     selected_character: wizard.Character,
@@ -133,13 +145,54 @@ Game :: struct {
     has_investigated: bool,
     has_studied:      bool,
     action_points:    int,
+}
 
-    ball_position:      glsl.vec2,
-    ball_escape_vector: glsl.vec2,
-    ball_escape_speed:  f32,
-    ball_type:          Ball_Type,
-    ball_state:         Ball_State,
-    ball:               Ball,
+Battle_Stats :: struct {
+    damage:            [entity.Turn]Damage_Stats,
+    poison:            [entity.Turn]Damage_Stats,
+    health_gained:     [entity.Turn]int,
+    blocks_hit:        [entity.Turn][wizard.Block_Element]int,
+    relic_proc_counts: [relic.Relic]int,
+}
+
+Damage_Stats :: struct {
+    damage_done:              int,
+    highest_damage:           int,
+
+    potential_damage_done:    int,
+    potential_highest_damage: int,
+}
+
+merge_and_clear_stats :: proc(a, b: ^Battle_Stats) {
+    for &stats, turn in a.damage {
+        stats.damage_done              += b.damage[turn].damage_done
+        stats.highest_damage           += b.damage[turn].highest_damage
+        stats.potential_damage_done    += b.damage[turn].potential_damage_done
+        stats.potential_highest_damage += b.damage[turn].potential_highest_damage
+    }
+
+    for &stats, turn in a.poison {
+        stats.damage_done              += b.poison[turn].damage_done
+        stats.highest_damage           += b.poison[turn].highest_damage
+        stats.potential_damage_done    += b.poison[turn].potential_damage_done
+        stats.potential_highest_damage += b.poison[turn].potential_highest_damage
+    }
+
+    for &count, turn in a.health_gained {
+        count += b.health_gained[turn]
+    }
+
+    for &blocks, turn in a.blocks_hit {
+        for &count, element in blocks {
+            count += b.blocks_hit[turn][element]
+        }
+    }
+
+    for &count, relic in a.relic_proc_counts {
+        count += b.relic_proc_counts[relic]
+    }
+
+    b^ = {}
 }
 
 init :: proc(p: ^platform.Platform, g: ^Game) {
@@ -349,11 +402,11 @@ handle_event :: proc(p: ^platform.Platform, g: ^Game, e: sdl3.Event) {
                         g.world_id,
                         adventure.get_test_arena_layout_for_stage(),
                         #partial {
-                            .Ice      = 1,
-                            .Healing  = 1,
-                            .Poison   = 1,
-                            .Fire     = 1,
-                            .Electric = 1,
+                            .Ice      = 0,
+                            .Healing  = 3,
+                            .Poison   = 0,
+                            .Fire     = 0,
+                            .Electric = 0,
                         },
                         g.arena_offsets[.Enemy],
                     ),
@@ -518,6 +571,8 @@ do_character_select :: proc(p: ^platform.Platform, g: ^Game) {
                 stats = &wizard.CHARACTERS[g.selected_character]
             }
 
+            g.relics = {}
+
             entity := entity.player(&g.entities)
             wizard.delete_spell_arena(entity.arena)
 
@@ -531,12 +586,21 @@ do_character_select :: proc(p: ^platform.Platform, g: ^Game) {
                 ),
             }
 
+            g.relics.active = {}
+            relic.add(&g.relics, .Protective_Aura)
+            relic.add(&g.relics, .Weaken_Blocks)
+            relic.add(&g.relics, .Harden_Blocks)
+
+            for &block in entity.arena.blocks {
+                proc_relics_by_type(p, g, .On_Player_Block_Restored, { block = &block })
+            }
+
             g.state = .Adventure_Select
         }
     }
 }
 
-begin_next_stage :: proc(g: ^Game) {
+begin_next_stage :: proc(p: ^platform.Platform, g: ^Game) {
     stage  := adventure.stage(&g.adventure)
     entity := entity.enemy(&g.entities)
 
@@ -552,6 +616,13 @@ begin_next_stage :: proc(g: ^Game) {
         ),
     }
 
+    for &block in entity.arena.blocks {
+        proc_relics_by_type(p, g, .On_Enemy_Block_Restored, { block = &block })
+    }
+
+    fmt.printfln("%#v", g.battle_stats)
+    merge_and_clear_stats(&g.run_stats, &g.battle_stats)
+
     g.state         = .Battle
     g.entities.turn = .Player
 }
@@ -561,7 +632,7 @@ do_adventure_select :: proc(p: ^platform.Platform, g: ^Game) {
     g.adventure.stages = adventure.DRAGON_ADVENTURE
 
     adventure.init(g.ui.ctx, &g.adventure)
-    begin_next_stage(g)
+    begin_next_stage(p, g)
 }
 
 do_battle :: proc(p: ^platform.Platform, g: ^Game) {
@@ -657,26 +728,76 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                 g.ball_escape_speed = 1.0
 
                 box2d.DestroyBody(g.ball.body_id)
-                current := entity.current(&g.entities)
+
+                current   := entity.current(&g.entities)
+                other     := entity.other  (&g.entities)
+                enemy     := entity.enemy  (&g.entities)
+                character := g.player.stats.character
+                stage     := adventure.stage(&g.adventure)
 
                 if current.arena.disabled == len(current.arena.blocks) {
-                    elements: wizard.Elements
+                    elements:  wizard.Elements
+                    proc_type: relic.Proc_Type
 
                     switch g.entities.turn {
-                        case .Player: elements = wizard.get_elements(g.player)
-                        case .Enemy:  elements = adventure.stage(&g.adventure).elements
+                        case .Player:
+                            elements  = wizard.get_elements(g.player)
+                            proc_type = .On_Player_Block_Restored
+
+                        case .Enemy:
+                            elements  = adventure.stage(&g.adventure).elements
+                            proc_type = .On_Enemy_Block_Restored
                     }
 
                     wizard.restore_spell_arena(&current.arena, elements)
+
+                    for &block in current.arena.blocks {
+                        proc_relics_by_type(p, g, proc_type, { block = &block })
+                    }
                 }
 
-                enemy := entity.enemy(&g.entities)
+                __compute_damage :: proc(
+                    p:        ^platform.Platform,
+                    g:        ^Game,
+                    score:    ^int,
+                    stats:    ^Damage_Stats,
+                    proc_type: relic.Proc_Type,
+                    hook:      proc(p: ^platform.Platform, g: ^Game, score: ^int),
+                ) {
+                    stats.potential_damage_done   += score^
+                    stats.potential_highest_damage = max(stats.potential_highest_damage, score^)
+
+                    proc_relics_by_type(p, g, proc_type, { damage = score })
+                    hook               (p, g, score)
+
+                    stats.damage_done   += score^
+                    stats.highest_damage = max(stats.highest_damage, score^)
+                }
 
                 // We should only apply the damage if the enemy is still alive
                 // This may seem pointless, but the enemy can kill itself. This
                 // saves the player from being hurt by dead enemies.
                 if enemy.health != 0 {
-                    other         := entity.other(&g.entities)
+                    switch g.entities.turn {
+                        case .Player: // We're hitting the enemey
+                            __compute_damage(
+                                p, g,
+                                &current.damage,
+                                &g.battle_stats.damage[.Player],
+                                .On_Enemy_Hit,
+                                ENEMY_HOOKS[stage.monster].on_take_damage,
+                            )
+
+                        case .Enemy: // We're being hit by the enemy
+                            __compute_damage(
+                                p, g,
+                                &current.damage,
+                                &g.battle_stats.damage[.Enemy],
+                                .On_Player_Hit,
+                                PLAYER_HOOKS[character].on_take_damage,
+                            )
+                    }
+
                     other.health   = max(other.health - current.damage, 0)
                     current.damage = 0
                 }
@@ -685,8 +806,37 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                     g.state = .Camp_Fire
                 }
 
-                character := g.player.stats.character
-                stage     := adventure.stage(&g.adventure)
+                // Apply poison damage if the enemey is not dead
+                if enemy.health != 0 {
+                    poison_damage := int(bool(current.poison)) * 10 // Maybe relic for multiply?
+
+                    switch g.entities.turn {
+                        case .Player: // We're being poisoned
+                            __compute_damage(
+                                p, g,
+                                &poison_damage,
+                                &g.battle_stats.poison[.Enemy],
+                                .On_Player_Poisoned,
+                                PLAYER_HOOKS[character].on_take_poison,
+                            )
+
+                        case .Enemy: // We're being hit by the enemy
+                            __compute_damage(
+                                p, g,
+                                &poison_damage,
+                                &g.battle_stats.poison[.Player],
+                                .On_Enemy_Poisoned,
+                                ENEMY_HOOKS[stage.monster].on_take_poison,
+                            )
+                    }
+
+                    current.health = max(current.health - poison_damage, 0)
+                    current.poison = max(current.poison - 1,             0)
+                }
+
+                if enemy.health == 0 {
+                    g.state = .Camp_Fire
+                }
 
                 switch g.entities.turn {
                     case .Player: PLAYER_HOOKS[character    ].on_turn_end(p, g)
@@ -746,8 +896,10 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                     switch block.status {
                         case .None: panic("Well that's weird")
 
-                        case .Burning:     element = .Fire
                         case .Frozen:      element = .Ice
+                        case .Healing:     element = .Healing
+                        case .Poisoned:    element = .Poison
+                        case .Burning:     element = .Fire
                         case .Charged:     element = .Electric
                         case .Electrified: element = .Electric
                     }
@@ -854,7 +1006,8 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
         if user_data == nil {
             platform.play_sound(g.sounds.hit_wall)
         } else {
-            hit_block(p, g, cast(^wizard.Spell_Block) user_data)
+            block := cast(^wizard.Spell_Block) user_data
+            hit_block(p, g, &block)
         }
     }
 }
@@ -976,11 +1129,15 @@ do_camp_fire :: proc(p: ^platform.Platform, g: ^Game) {
                     wizard.get_elements(g.player),
                 )
 
+                for &block in player_entity.arena.blocks {
+                    proc_relics_by_type(p, g, .On_Player_Block_Restored, { block = &block })
+                }
+
                 g.have_setup_camp       = false
                 g.particle_system.count = 0
 
                 adventure.advance_to_next_stage(&g.adventure)
-                begin_next_stage(g)
+                begin_next_stage(p, g)
             }
 
             {
@@ -1062,26 +1219,31 @@ do_post_game :: proc(p: ^platform.Platform, g: ^Game) {
     g.state = .Title
 }
 
-hit_block :: proc(p: ^platform.Platform, g: ^Game, block: ^wizard.Spell_Block) {
-    __hit_block :: proc(g: ^Game, block: ^wizard.Spell_Block) {
+hit_block :: proc(p: ^platform.Platform, g: ^Game, block: ^^wizard.Spell_Block) {
+    __hit_block :: proc(p: ^platform.Platform, g: ^Game, block: ^^wizard.Spell_Block) {
         ball_info := BALL_INFO[g.ball.type]
 
         current := entity.current(&g.entities)
           other := entity.other  (&g.entities)
 
-        hit_sound: platform.Audio
+        restore_healing := false
 
-        switch block.element {
+        switch block^.element {
             case .Basic:
-                hit_sound = g.sounds.hit_basic
+                platform.play_sound(g.sounds.hit_basic)
 
             case .Fire:
-                wizard.apply_status_effect(other.arena.blocks, .Burning, 4)
+                wizard.enstatus_n_spell_blocks(&other.arena, .Burning, 4)
+                // platform.play_sound(g.sounds.hit_burner)
 
             case .Healing:
+                // We need to defer the restoration until after the block has been
+                // destroyed, otherwise we may not restore a healing block.
+                restore_healing = true
+                // platform.play_sound(g.sounds.hit_healer)
 
             case .Electric:
-                // wizard.apply_status_effect(other.arena, .Electrified, 4)
+                // wizard.enstatus_n_spell_blocks(&other.arena, .Electrified, 4)
 
                 // TODO: Ray cast in four directions to find blocks to
                 //       charge.
@@ -1089,17 +1251,55 @@ hit_block :: proc(p: ^platform.Platform, g: ^Game, block: ^wizard.Spell_Block) {
                 //       Timer, charged blocks propagate in one direction
                 //       One time, charged blocks break and trigger.
 
-            case .Ice:
-                wizard.apply_status_effect(other.arena.blocks, .Frozen, 4)
+                // platform.play_sound(g.sounds.hit_electrifier)
 
-                hit_sound = g.sounds.hit_freezer
+            case .Ice:
+                wizard.enstatus_n_spell_blocks(&other.arena, .Frozen, 4)
+                platform.play_sound(g.sounds.hit_freezer)
 
             case .Poison:
-                hit_sound = g.sounds.hit_poisoner
+                wizard.enstatus_n_spell_blocks(&other.arena, .Poisoned, 4)
+                platform.play_sound(g.sounds.hit_poisoner)
         }
 
-        block.health -= 1
-        block.element = .Basic // Magic blocks only last a single hit
+        current.arena.block_counts                [block^.element] -= 1
+        g.battle_stats.blocks_hit[g.entities.turn][block^.element] += 1
+
+        block^.health -= 1
+        block^.element = .Basic // Magic blocks only last a single hit
+
+        if block^.health == 0 {
+            wizard.disable_block(&current.arena, block)
+        }
+
+        // We want to restore after the current block is removed
+        // Otherwise it's possible to soft lock yourself our of healing
+        // blocks
+        if restore_healing {
+            enabled_blocks := wizard.enable_n_spell_blocks(&current.arena, 4)
+
+            if len(enabled_blocks) == 0 {
+                // No blocks were destroyed, but we still want to have our healing block back.
+                wizard.move_healing_block(&current.arena, block^)
+            }
+
+            if len(enabled_blocks) == 1 {
+                // Since only one block was destroyed, it will be restored as a healing block.
+                // This is nice, but it is easily exploited. We shouuld remove the element, and
+                // find a new place for it.
+                block^.element = .Basic
+                wizard.move_healing_block(&current.arena, block^)
+            }
+
+            for &block in enabled_blocks {
+                switch g.entities.turn {
+                    case .Player: proc_relics_by_type(p, g, .On_Player_Block_Restored, { block = block })
+                    case .Enemy:  proc_relics_by_type(p, g, .On_Enemy_Block_Restored,  { block = block })
+                }
+            }
+
+            wizard.enstatus_n_spell_blocks(&current.arena, .Healing, 4)
+        }
 
         damage_mult: int
 
@@ -1109,13 +1309,6 @@ hit_block :: proc(p: ^platform.Platform, g: ^Game, block: ^wizard.Spell_Block) {
         }
 
         current.damage += ball_info.damage * damage_mult
-
-        if block.health == 0 {
-            box2d.Body_Disable(block.body_id)
-            current.arena.disabled += 1
-        }
-
-        platform.play_sound(hit_sound)
     }
 
     current := entity.current(&g.entities)
@@ -1124,52 +1317,54 @@ hit_block :: proc(p: ^platform.Platform, g: ^Game, block: ^wizard.Spell_Block) {
     stage     := adventure.stage(&g.adventure)
 
     switch g.entities.turn {
-        case .Player: PLAYER_HOOKS[character    ].on_block_hit(p, g, block)
-        case .Enemy:   ENEMY_HOOKS[stage.monster].on_block_hit(p, g, block)
+        case .Player: PLAYER_HOOKS[character    ].on_block_hit(p, g, block^)
+        case .Enemy:   ENEMY_HOOKS[stage.monster].on_block_hit(p, g, block^)
     }
 
-    switch block.status {
-        case .Charged: fallthrough
+    proc_relics_by_type(p, g, .On_Block_Hit, { block = block^ })
+
+    switch block^.status {
         case .None:
-            __hit_block(g, block)
+            __hit_block(p, g, block)
+
+        case .Frozen:
+            platform.play_sound(g.sounds.hit_frozen)
+
+        case .Healing:
+            __hit_block(p, g, block)
+
+            max_health: int
+
+            switch g.entities.turn {
+                case .Player: max_health = wizard.get_max_health(g.player)
+                case .Enemy:  max_health = stage.enemy_health
+            }
+
+            new_health    := min(current.health + 5, max_health)
+            delta_health  := new_health - current.health
+            current.health = new_health
+
+            g.battle_stats.health_gained[g.entities.turn] += delta_health
+
+        case .Poisoned:
+            current.poison += 1
+
+            __hit_block(p, g, block)
 
         case .Burning:
             // TODO: platform.play_sound(hit_burning_sound)
             current.health -= 1
-            block.status    = .None
 
-            __hit_block(g, block)
+            __hit_block(p, g, block)
 
-        case .Frozen:
-            platform.play_sound(g.sounds.hit_frozen)
-            block.status = .None
+        case .Charged:
+            __hit_block(p, g, block)
 
         case .Electrified:
+            __hit_block(p, g, block)
     }
-}
 
-
-// ----------------------------------------------
-// Hooks
-// ----------------------------------------------
-
-// Cyclic imports require us to define this here :(
-On_Turn_Start_Fn :: proc(p: ^platform.Platform, g: ^Game)
-On_Turn_End_Fn   :: proc(p: ^platform.Platform, g: ^Game)
-On_Shoot_Ball_Fn :: proc(p: ^platform.Platform, g: ^Game)
-On_Block_Hit_Fn  :: proc(p: ^platform.Platform, g: ^Game, b: ^wizard.Spell_Block)
-
-@private _nil_on_turn_start :: proc(p: ^platform.Platform, g: ^Game) {}
-@private _nil_on_turn_end   :: proc(p: ^platform.Platform, g: ^Game) {}
-@private _nil_on_block_hit  :: proc(p: ^platform.Platform, g: ^Game, b: ^wizard.Spell_Block) {}
-
-@private _default_on_shoot_ball :: proc(p: ^platform.Platform, g: ^Game) {
-    g.ball = create_ball(
-        g.world_id,
-        g.ball_position,
-        platform.mouse_position(p.mouse) - g.ball_position,
-        g.ball_type,
-    )
+    wizard.distatus_block(&current.arena, block)
 }
 
 // ----------------------------------------------
@@ -1192,7 +1387,7 @@ Ball_Info :: struct {
     name:   string,
     damage: int,
 
-    on_block_hit: On_Block_Hit_Fn,
+    on_block_hit: proc(p: ^platform.Platform, g: ^Game, b: ^wizard.Spell_Block),
 
     size_in_pixels: f32,
     friction:       f32,
@@ -1242,103 +1437,4 @@ create_ball :: proc(world_id: box2d.WorldId, position, velocity: glsl.vec2, type
     shape_id := box2d.CreateCircleShape(body_id, shape_def, circle)
 
     return { type, body_id, shape_id }
-}
-
-// ----------------------------------------------
-// Character Hooks
-// ----------------------------------------------
-
-Character_Hooks :: struct {
-    on_turn_start: On_Turn_Start_Fn,
-    on_turn_end:   On_Turn_End_Fn,
-    on_shoot_ball: On_Shoot_Ball_Fn,
-    on_block_hit:  On_Block_Hit_Fn,
-}
-
-PLAYER_HOOKS := [wizard.Character]Character_Hooks {
-    .Old_Man = {
-        on_turn_start = _nil_on_turn_start,
-        on_turn_end   = _nil_on_turn_end,
-        on_shoot_ball = _default_on_shoot_ball,
-        on_block_hit  = _nil_on_block_hit,
-    },
-
-    .Twins = {
-        on_turn_start = _nil_on_turn_start,
-        on_turn_end   = _nil_on_turn_end,
-        on_shoot_ball = _default_on_shoot_ball,
-        on_block_hit  = _nil_on_block_hit,
-    },
-}
-
-ENEMY_HOOKS := [wizard.Monster]Character_Hooks {
-    .Electric_Spider = {
-        on_turn_start = _nil_on_turn_start,
-        on_turn_end   = _nil_on_turn_end,
-        on_shoot_ball = _default_on_shoot_ball,
-        on_block_hit  = _nil_on_block_hit,
-    },
-
-    .Skeleton = {
-        on_turn_start = _nil_on_turn_start,
-        on_turn_end   = _nil_on_turn_end,
-        on_shoot_ball = _default_on_shoot_ball,
-        on_block_hit  = _nil_on_block_hit,
-    },
-
-    .Poison_Toad = {
-        on_turn_start = _nil_on_turn_start,
-        on_turn_end   = _nil_on_turn_end,
-        on_shoot_ball = _default_on_shoot_ball,
-        on_block_hit  = _nil_on_block_hit,
-    },
-
-    .Lightning_Wolf = {
-        on_turn_start = _nil_on_turn_start,
-        on_turn_end   = _nil_on_turn_end,
-        on_shoot_ball = _default_on_shoot_ball,
-        on_block_hit  = _nil_on_block_hit,
-    },
-
-    .Goblin_Shaman = {
-        on_turn_start = _nil_on_turn_start,
-        on_turn_end   = _nil_on_turn_end,
-        on_shoot_ball = _default_on_shoot_ball,
-        on_block_hit  = _nil_on_block_hit,
-    },
-
-    .Troll = {
-        on_turn_start = _nil_on_turn_start,
-        on_turn_end   = _nil_on_turn_end,
-        on_shoot_ball = _default_on_shoot_ball,
-        on_block_hit  = _nil_on_block_hit,
-    },
-
-    .Fire_Dragon_Baby = {
-        on_turn_start = _nil_on_turn_start,
-        on_turn_end   = _nil_on_turn_end,
-        on_shoot_ball = _default_on_shoot_ball,
-        on_block_hit  = _nil_on_block_hit,
-    },
-
-    .Fire_Dragon = {
-        on_turn_start = _nil_on_turn_start,
-        on_turn_end   = _nil_on_turn_end,
-        on_shoot_ball = _default_on_shoot_ball,
-        on_block_hit  = _nil_on_block_hit,
-    },
-
-    .Ice_Dragon_Baby = {
-        on_turn_start = _nil_on_turn_start,
-        on_turn_end   = _nil_on_turn_end,
-        on_shoot_ball = _default_on_shoot_ball,
-        on_block_hit  = _nil_on_block_hit,
-    },
-
-    .Ice_Dragon = {
-        on_turn_start = _nil_on_turn_start,
-        on_turn_end   = _nil_on_turn_end,
-        on_shoot_ball = _default_on_shoot_ball,
-        on_block_hit  = _nil_on_block_hit,
-    }
 }

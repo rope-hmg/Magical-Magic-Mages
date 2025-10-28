@@ -5,6 +5,8 @@ Character_Stats :: struct {
     character:              Character,
     action_points_per_camp: int,
     elements:               Elements,
+
+    // backdrop:
 }
 
 Character :: enum {

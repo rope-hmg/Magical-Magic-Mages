@@ -287,14 +287,14 @@
             ],
             "shape": 1,
             "scale": 1
+        },
+        {
+            "position": [
+                331.37890625,
+                234.19921875
+            ],
+            "shape": 0,
+            "scale": 4
         }
-    ],
-    "elements": {
-        "Basic": 0,
-        "Ice": 0,
-        "Healing": 0,
-        "Poison": 0,
-        "Fire": 0,
-        "Electric": 0
-    }
+    ]
 }

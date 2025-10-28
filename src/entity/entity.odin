@@ -9,6 +9,7 @@ import "game:wizard"
 Entity :: struct {
     health:   int,
     damage:   int,
+    poison:   int,
     arena:    wizard.Spell_Arena,
     strength: wizard.Elements,
 }

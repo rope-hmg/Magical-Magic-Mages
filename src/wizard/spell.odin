@@ -1,6 +1,7 @@
 package wizard
 
 import "core:fmt"
+import "core:slice"
 import "core:math/linalg/glsl"
 import "core:math/rand"
 
@@ -52,26 +53,31 @@ Block_Scale :: enum { One = 1, Two, Three, Four }
 
 Block_Status :: enum {
     None,
-    Burning,
     Frozen,
+    Healing,
+    Poisoned,
+    Burning,
     Charged,
     Electrified,
 }
 
 Spell_Block :: struct {
-    shape:    Block_Shape,
-    element:  Block_Element,
-    scale:    Block_Scale,
-    status:   Block_Status,
-    health:   int,
-    body_id:  box2d.BodyId,
-    shape_id: box2d.ShapeId,
+    shape:       Block_Shape,
+    element:     Block_Element,
+    scale:       Block_Scale,
+    status:      Block_Status,
+    health:      int,
+    arena_index: int, // Don't look
+    body_id:     box2d.BodyId,
+    shape_id:    box2d.ShapeId,
 }
 
 Spell_Arena :: struct {
-    disabled: int,
-    blocks:   []Spell_Block,
-    colours:  []graphics.Colour,
+    disabled:       int,
+    enstatused:     int,
+    blocks:         []Spell_Block,
+    colours:        []graphics.Colour,
+    block_counts: Elements,
 }
 
 Layout_Block :: struct {
@@ -178,11 +184,12 @@ make_spell_arena :: proc(
         body_id := box2d.CreateBody(world_id, body_def)
 
         blocks[i] = {
-            shape    = layout_block.shape,
-            scale    = layout_block.scale,
-            health   = int(layout_block.scale),
-            body_id  = body_id,
-            shape_id = box2d.CreatePolygonShape(body_id, shape_def, polygon),
+            shape       = layout_block.shape,
+            scale       = layout_block.scale,
+            health      = int(layout_block.scale),
+            arena_index = i,
+            body_id     = body_id,
+            shape_id    = box2d.CreatePolygonShape(body_id, shape_def, polygon),
         }
     }
 
@@ -229,17 +236,95 @@ delete_spell_arena :: proc(spell_arena: Spell_Arena) {
     }
 }
 
-generate_non_overlapping_random_indices :: proc(indices: []int, max_value: int) {
-    max_step   := max_value / len(indices)
-    last_index := int(rand.uint32()) % max_step
+disable_block :: proc(arena: ^Spell_Arena, block: ^^Spell_Block) {
+    box2d.Body_Disable(block^.body_id)
 
-    for &index in indices {
-        index        = last_index
-        random_step := max(1, int(rand.uint32()) % max_step)
-        last_index   = min(last_index + random_step, max_value)
+    // Account for the enstatused blocks when disabling
+    if block^.status != .None {
+        block^.status     = .None
+        arena.enstatused -= 1
     }
 
-    rand.shuffle(indices)
+    arena.disabled       += 1
+    first_disabled_index := len(arena.blocks) - arena.disabled
+
+    _swap_blocks(arena.blocks, block^.arena_index, first_disabled_index)
+
+    // Update the pointer
+    block^ = &arena.blocks[first_disabled_index]
+}
+
+enable_block :: proc(arena: ^Spell_Arena, block: ^^Spell_Block) {
+    box2d.Body_Enable(block^.body_id)
+
+    // Account for the enstatused region
+    newly_enabled_index := len(arena.blocks) - arena.disabled - arena.enstatused
+    arena.disabled      -= 1
+
+    _swap_blocks(arena.blocks, block^.arena_index, newly_enabled_index)
+
+    // Update the pointer
+    block^ = &arena.blocks[newly_enabled_index]
+}
+
+enstatus_block :: proc(arena: ^Spell_Arena, block: ^^Spell_Block, status: Block_Status) {
+    assert(status != .None, "Use `remove_block_status` to set block.status = .None")
+
+    block^.status = status
+
+    arena.enstatused       += 1
+    first_enstatused_index := len(arena.blocks) - arena.disabled - arena.enstatused
+
+    _swap_blocks(arena.blocks, block^.arena_index, first_enstatused_index)
+
+    block^ = &arena.blocks[first_enstatused_index]
+}
+
+distatus_block :: proc(arena: ^Spell_Arena, block: ^^Spell_Block) {
+    if block^.status != .None {
+        block^.status = .None
+
+        newly_distatused_index := len(arena.blocks) - arena.disabled - arena.enstatused
+        arena.enstatused       -= 1
+
+        _swap_blocks(arena.blocks, block^.arena_index, newly_distatused_index)
+
+        // Update the pointer
+        block^ = &arena.blocks[newly_distatused_index]
+    }
+}
+
+@private _swap_blocks :: #force_inline proc(blocks: []Spell_Block, i, j: int) {
+    if i != j {
+        // Swap the blocks
+        slice.swap(blocks, i, j)
+
+        // Make sure their indexes are correct
+        blocks[i].arena_index = i
+        blocks[j].arena_index = j
+
+        // Make sure their userdata pointers are correct
+        box2d.Shape_SetUserData(blocks[i].shape_id, &blocks[i])
+        box2d.Shape_SetUserData(blocks[j].shape_id, &blocks[j])
+    }
+}
+
+generate_non_overlapping_random_indices :: proc(indices: []int, array_len: int, array_offset := 0) {
+    if array_len > 0 {
+        if array_len < len(indices) {
+            fmt.println("We shouldn't get here, but if we do... Give me all of them!")
+
+        } else {
+            max_step   := array_len / len(indices)
+            last_index := rand.int_max(max_step)
+
+            for &index in indices {
+                index        = last_index + array_offset
+                random_step := max(1, rand.int_max(max_step + 1))
+                last_index   = min(last_index + random_step, array_len)
+            }
+        }
+    }
 }
 
 @private _add_random_spell_blocks :: proc(arena: ^Spell_Arena, elements: Elements) {
@@ -256,7 +341,9 @@ generate_non_overlapping_random_indices :: proc(indices: []int, max_value: int) 
         magic_blocks := min(total_count, block_count)
         indices      := make([]int, magic_blocks, context.temp_allocator)
 
-        generate_non_overlapping_random_indices(indices[:], block_count)
+        generate_non_overlapping_random_indices(indices[:], block_count - arena.disabled)
+
+        rand.shuffle(indices)
 
         for count, element in elements {
             if element == .Basic do continue
@@ -272,39 +359,134 @@ generate_non_overlapping_random_indices :: proc(indices: []int, max_value: int) 
     }
 }
 
-restore_spell_arena :: proc(spell_arena: ^Spell_Arena, elements: Elements) {
-    if spell_arena.blocks != nil {
-        spell_arena.disabled = 0
+@private _restore_block :: #force_inline proc(
+    block:  ^Spell_Block,
+    element: Block_Element = .Basic,
+) {
+    block.element = element
+    block.status  = .None
+    block.health  = int(block.scale)
+}
 
-        for &block in spell_arena.blocks {
+restore_spell_arena :: proc(arena: ^Spell_Arena, elements: Elements) {
+    if arena.blocks != nil {
+        arena.disabled     = 0
+        arena.enstatused   = 0
+        arena.block_counts = {}
+
+        for &block in arena.blocks {
             box2d.Body_Enable(block.body_id)
 
-            block.element = .Basic
-            block.health  = int(block.scale)
+            _restore_block(&block)
         }
 
-        _add_random_spell_blocks(spell_arena, elements)
+        _add_random_spell_blocks(arena, elements)
     }
 }
 
-apply_status_effect :: proc(blocks: []Spell_Block, status: Block_Status, count: int) {
-    if blocks != nil {
-        MAX_ATTEMPTS :: 16
+enable_n_spell_blocks :: proc(arena: ^Spell_Arena, n: int) -> []^Spell_Block {
+    block_count     := min(arena.disabled, n)
+    restored_blocks := make([]^Spell_Block, block_count, context.temp_allocator)
 
-        applied   := 0
-        attempted := 0
+    if block_count > 0 {
+        indices      := make([]int, block_count, context.temp_allocator)
+        offset_point := len(arena.blocks) - arena.disabled
 
-        for applied != count && attempted != MAX_ATTEMPTS {
-            index := int(rand.uint32()) % len(blocks)
-            block := &blocks[index]
+        generate_non_overlapping_random_indices(indices[:], arena.disabled, offset_point)
 
-            if block.health > 0 && block.status == .None {
-                block.status = status
-                applied     += 1
-                attempted    = 0
-            } else {
-                attempted   += 1
+        missing_elements: bit_set[Block_Element]
+
+        for count, element in arena.block_counts {
+            if count < 0 do missing_elements += { element }
+        }
+
+        for &index in indices {
+            block := &arena.blocks[index]
+            enable_block(arena, &block)
+
+            index = block.arena_index
+
+            block_count                 -= 1
+            restored_blocks[block_count] = block
+        }
+
+        __restore_block :: proc(
+            arena:            ^Spell_Arena,
+            index:             int,
+            element:           Block_Element,
+            missing_elements: ^bit_set[Block_Element],
+        ) {
+            block := &arena.blocks[index]
+            _restore_block(block, element)
+
+            arena.block_counts[element] += 1
+
+            if arena.block_counts[element] == 0 {
+                missing_elements^ -= { element }
             }
         }
+
+        start := 0
+
+        // Always restore at least one healing block if we can
+        if .Healing in missing_elements {
+            __restore_block(arena, indices[start], .Healing, &missing_elements)
+            start += 1
+        }
+
+        for i := start;
+            i  < len(indices);
+            i += 1
+        {
+            element, ok := rand.choice_bit_set(missing_elements)
+            __restore_block(arena, indices[i], element, &missing_elements)
+        }
+    }
+
+    return restored_blocks
+}
+
+// Applies a status effect to up to n currently active blocks
+enstatus_n_spell_blocks :: proc(arena: ^Spell_Arena, status: Block_Status, count: int) {
+    distatused_count := len(arena.blocks) - arena.disabled - arena.enstatused
+         index_count := min(count, distatused_count)
+
+    if index_count > 0 {
+        indices := make([]int, index_count, context.temp_allocator)
+
+        generate_non_overlapping_random_indices(indices[:], distatused_count)
+
+        for i := index_count - 1; i >= 0; i -= 1 {
+            index := indices[i]
+            block := &arena.blocks[index]
+
+            enstatus_block(arena, &block, status)
+        }
+    }
+}
+
+move_healing_block :: proc(arena: ^Spell_Arena, old_block: ^Spell_Block) {
+    if arena.block_counts[.Healing] < 0 {
+        placed_healing := false
+
+        for i := 0;
+            i < len(arena.blocks) && !placed_healing;
+            i += 1
+        {
+            if i != old_block.arena_index {
+                block := &arena.blocks[i]
+
+                if block.element == .Basic {
+                    block.element  = .Healing
+                    placed_healing = true
+                }
+            }
+        }
+
+        if !placed_healing {
+            old_block.element = .Healing
+        }
+
+        arena.block_counts[.Healing] += 1
     }
 }
