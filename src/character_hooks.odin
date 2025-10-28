@@ -19,12 +19,14 @@ _nil_on_take_damage :: proc(p: ^platform.Platform, g: ^Game, d: ^int) {}
 _nil_on_take_poison :: proc(p: ^platform.Platform, g: ^Game, d: ^int) {}
 
 _default_on_shoot_ball :: proc(p: ^platform.Platform, g: ^Game) {
-    g.ball = create_ball(
+    g.balls[g.ball_count] = create_ball(
         g.world_id,
         g.ball_position,
         platform.mouse_position(p.mouse) - g.ball_position,
-        g.ball_type,
+        .Basic,
     )
+
+    g.ball_count += 1
 }
 
 PLAYER_HOOKS := [wizard.Character]Character_Hooks {

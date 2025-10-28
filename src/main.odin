@@ -126,17 +126,17 @@ Game :: struct {
     entities:        entity.Entities,
     relics:          relic.Relics,
 
-    ball_position:      glsl.vec2,
-    ball_escape_vector: glsl.vec2,
-    ball_escape_speed:  f32,
-    ball_type:          Ball_Type,
-    ball_state:         Ball_State,
-    ball:               Ball,
+    // Ball stuff ( ͡° ͜ʖ ͡°)
+    ball_count:      int,
+    ball_state:      Ball_State,
+    ball_position:   glsl.vec2,
+
+    balls: [256]Ball, // I _am_ the suffix
 
        run_stats: Battle_Stats,
     battle_stats: Battle_Stats,
 
-    // Character Select
+    // Character Select ( ͡ʘ ͜ʖ ͡ʘ)
     selected_character: wizard.Character,
 
     // Camp Fire
@@ -302,10 +302,6 @@ init :: proc(p: ^platform.Platform, g: ^Game) {
         box2d.CreatePolygonShape(g.arena_id, wall_shape_def, box2d.MakeOffsetBox(   ceiling.w,    ceiling.h, {    ceiling.x,    ceiling.y }, box2d.MakeRot(0))),
     }
 
-    g.ball_escape_vector = { 1, -1 }
-    g.ball_escape_speed  = 1.0
-
-    g.ball_type     = .Basic
     g.ball_state    = .Picking_A_Spot
     g.ball_textures = {
         .Basic = image.LoadTexture(p.renderer, "assets/graphics/particles/circle_03.png"),
@@ -642,7 +638,7 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
 
     switch g.ball_state {
         case .Picking_A_Spot:
-            ball_info := BALL_INFO[g.ball_type]
+            ball_info := BALL_INFO[.Basic]
 
             // TODO: Adjust for the second turn
             min_x := g.arena_width * (f32(g.entities.turn) + 0) + (g.half_wall_thickness * 2)
@@ -660,14 +656,14 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                 h = ball_info.size_in_pixels,
             }
 
-            sdl3.RenderTexture(p.renderer, g.ball_textures[g.ball_type], nil, &rect)
+            sdl3.RenderTexture(p.renderer, g.ball_textures[.Basic], nil, &rect)
 
             if platform.button_pressed(p.mouse, .Left) {
                 g.ball_state = .Aiming
             }
 
         case .Aiming:
-            ball_info := BALL_INFO[g.ball_type]
+            ball_info := BALL_INFO[.Basic]
             rect      := sdl3.FRect {
                 x = g.ball_position.x,
                 y = g.ball_position.y,
@@ -675,7 +671,7 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                 h = ball_info.size_in_pixels,
             }
 
-            sdl3.RenderTexture(p.renderer, g.ball_textures[g.ball_type], nil, &rect)
+            sdl3.RenderTexture(p.renderer, g.ball_textures[.Basic], nil, &rect)
 
             if platform.button_released(p.mouse, .Left) {
                 character := g.player.stats.character
@@ -690,176 +686,187 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
             }
 
         case .Flying_About_The_Place:
-            ball_info := BALL_INFO[g.ball.type]
+            // Lu oh oop
+            #reverse for &ball, i in g.balls[:g.ball_count] {
+                ball_info := BALL_INFO[ball.type]
 
-            physics.render_textured_object(
-                p.renderer,
-                g.ball_textures[g.ball.type],
-                g.ball.body_id,
-                g.ball.shape_id,
-            )
+                physics.render_textured_object(
+                    p.renderer,
+                    g.ball_textures[ball.type],
+                    ball.body_id,
+                    ball.shape_id,
+                )
 
-            g.ball_position = box2d.Body_GetPosition      (g.ball.body_id)
-            ball_velocity  := box2d.Body_GetLinearVelocity(g.ball.body_id)
-            ball_speed     := glsl.length(ball_velocity)
+                ball_position := box2d.Body_GetPosition      (ball.body_id)
+                ball_velocity  := box2d.Body_GetLinearVelocity(ball.body_id)
+                ball_speed     := glsl.length(ball_velocity)
 
-            g.particle_spawn_time += p.delta_seconds
+                g.particle_spawn_time += p.delta_seconds
 
-            if g.particle_spawn_time >= (1 / ball_speed) * 0.6 {
-                g.particle_spawn_time = 0.0
+                if g.particle_spawn_time >= (1 / ball_speed) * 0.6 {
+                    g.particle_spawn_time = 0.0
 
-                back  := glsl.normalize(ball_velocity) * physics.pixels_to_metres(ball_info.size_in_pixels * -0.5)
-                side1 := glsl.vec2 {  back.y, -back.x }
-                side2 := glsl.vec2 { -back.y,  back.x }
+                    back  := glsl.normalize(ball_velocity) * physics.pixels_to_metres(ball_info.size_in_pixels * -0.5)
+                    side1 := glsl.vec2 {  back.y, -back.x }
+                    side2 := glsl.vec2 { -back.y,  back.x }
 
-                sides := []glsl.vec2 { side1, side2 }
-                back  += rand.choice(sides) * 0.2
+                    sides := []glsl.vec2 { side1, side2 }
+                    back  += rand.choice(sides) * 0.2
 
-                valid_colours := entity.current(&g.entities).arena.colours
+                    valid_colours := entity.current(&g.entities).arena.colours
 
-                physics.spawn_particle(g.particle_system, rand.choice(g.particle_textures[:]), rand.choice(valid_colours), g.ball_position + back  * rand.float32(), back  * 2)
-                physics.spawn_particle(g.particle_system, rand.choice(g.particle_textures[:]), rand.choice(valid_colours), g.ball_position + side1 * rand.float32(), side1 * 2)
-                physics.spawn_particle(g.particle_system, rand.choice(g.particle_textures[:]), rand.choice(valid_colours), g.ball_position + side2 * rand.float32(), side2 * 2)
-            }
+                    physics.spawn_particle(g.particle_system, rand.choice(g.particle_textures[:]), rand.choice(valid_colours), ball_position + back  * rand.float32(), back  * 2)
+                    physics.spawn_particle(g.particle_system, rand.choice(g.particle_textures[:]), rand.choice(valid_colours), ball_position + side1 * rand.float32(), side1 * 2)
+                    physics.spawn_particle(g.particle_system, rand.choice(g.particle_textures[:]), rand.choice(valid_colours), ball_position + side2 * rand.float32(), side2 * 2)
+                }
 
-            // If the ball has fallen off the bottom of the arena then turn is over.
-            if physics.metres_to_pixels(g.ball_position.y) - ball_info.size_in_pixels /* / 2 */ > f32(p.height) {
-                g.ball_state        = .Picking_A_Spot
-                g.ball_escape_speed = 1.0
+                // If the ball has fallen off the bottom of the arena then turn is over.
+                if physics.metres_to_pixels(ball_position.y) - ball_info.size_in_pixels /* / 2 */ > f32(p.height) {
+                    // TODO: Bool Pool
+                    box2d.DestroyBody(ball.body_id)
 
-                box2d.DestroyBody(g.ball.body_id)
+                    // MFW Testicular Torsion
+                    slice.swap(g.balls[:], g.ball_count, i)
 
-                current   := entity.current(&g.entities)
-                other     := entity.other  (&g.entities)
-                enemy     := entity.enemy  (&g.entities)
-                character := g.player.stats.character
-                stage     := adventure.stage(&g.adventure)
+                    g.ball_count -= 1
+                }
 
-                if current.arena.disabled == len(current.arena.blocks) {
-                    elements:  wizard.Elements
-                    proc_type: relic.Proc_Type
+                if g.ball_count == 0 {
+                    // TODO: when all the balls have dropped, hee speaks like _this_: give me the l oh oops.
+                    g.ball_state = .Picking_A_Spot
+
+                    current   := entity.current(&g.entities)
+                    other     := entity.other  (&g.entities)
+                    enemy     := entity.enemy  (&g.entities)
+                    character := g.player.stats.character
+                    stage     := adventure.stage(&g.adventure)
+
+                    if current.arena.disabled == len(current.arena.blocks) {
+                        elements:  wizard.Elements
+                        proc_type: relic.Proc_Type
+
+                        switch g.entities.turn {
+                            case .Player:
+                                elements  = wizard.get_elements(g.player)
+                                proc_type = .On_Player_Block_Restored
+
+                            case .Enemy:
+                                elements  = adventure.stage(&g.adventure).elements
+                                proc_type = .On_Enemy_Block_Restored
+                        }
+
+                        wizard.restore_spell_arena(&current.arena, elements)
+
+                        for &block in current.arena.blocks {
+                            proc_relics_by_type(p, g, proc_type, { block = &block })
+                        }
+                    }
+
+                    __compute_damage :: proc(
+                        p:        ^platform.Platform,
+                        g:        ^Game,
+                        score:    ^int,
+                        stats:    ^Damage_Stats,
+                        proc_type: relic.Proc_Type,
+                        hook:      proc(p: ^platform.Platform, g: ^Game, score: ^int),
+                    ) {
+                        stats.potential_damage_done   += score^
+                        stats.potential_highest_damage = max(stats.potential_highest_damage, score^)
+
+                        proc_relics_by_type(p, g, proc_type, { damage = score })
+                        hook               (p, g, score)
+
+                        stats.damage_done   += score^
+                        stats.highest_damage = max(stats.highest_damage, score^)
+                    }
+
+                    // We should only apply the damage if the enemy is still alive
+                    // This may seem pointless, but the enemy can kill itself. This
+                    // saves the player from being hurt by dead enemies.
+                    if enemy.health != 0 {
+                        switch g.entities.turn {
+                            case .Player: // We're hitting the enemey
+                                __compute_damage(
+                                    p, g,
+                                    &current.damage,
+                                    &g.battle_stats.damage[.Player],
+                                    .On_Enemy_Hit,
+                                    ENEMY_HOOKS[stage.monster].on_take_damage,
+                                )
+
+                            case .Enemy: // We're being hit by the enemy
+                                __compute_damage(
+                                    p, g,
+                                    &current.damage,
+                                    &g.battle_stats.damage[.Enemy],
+                                    .On_Player_Hit,
+                                    PLAYER_HOOKS[character].on_take_damage,
+                                )
+                        }
+
+                        other.health   = max(other.health - current.damage, 0)
+                        current.damage = 0
+                    }
+
+                    if enemy.health == 0 {
+                        g.state = .Camp_Fire
+                    }
+
+                    // Apply poison damage if the enemey is not dead
+                    if enemy.health != 0 {
+                        poison_damage := int(bool(current.poison)) * 10 // Maybe relic for multiply?
+
+                        switch g.entities.turn {
+                            case .Player: // We're being poisoned
+                                __compute_damage(
+                                    p, g,
+                                    &poison_damage,
+                                    &g.battle_stats.poison[.Enemy],
+                                    .On_Player_Poisoned,
+                                    PLAYER_HOOKS[character].on_take_poison,
+                                )
+
+                            case .Enemy: // We're being hit by the enemy
+                                __compute_damage(
+                                    p, g,
+                                    &poison_damage,
+                                    &g.battle_stats.poison[.Player],
+                                    .On_Enemy_Poisoned,
+                                    ENEMY_HOOKS[stage.monster].on_take_poison,
+                                )
+                        }
+
+                        current.health = max(current.health - poison_damage, 0)
+                        current.poison = max(current.poison - 1,             0)
+                    }
+
+                    if enemy.health == 0 {
+                        g.state = .Camp_Fire
+                    }
 
                     switch g.entities.turn {
-                        case .Player:
-                            elements  = wizard.get_elements(g.player)
-                            proc_type = .On_Player_Block_Restored
-
-                        case .Enemy:
-                            elements  = adventure.stage(&g.adventure).elements
-                            proc_type = .On_Enemy_Block_Restored
+                        case .Player: PLAYER_HOOKS[character    ].on_turn_end(p, g)
+                        case .Enemy:   ENEMY_HOOKS[stage.monster].on_turn_end(p, g)
                     }
 
-                    wizard.restore_spell_arena(&current.arena, elements)
-
-                    for &block in current.arena.blocks {
-                        proc_relics_by_type(p, g, proc_type, { block = &block })
-                    }
-                }
-
-                __compute_damage :: proc(
-                    p:        ^platform.Platform,
-                    g:        ^Game,
-                    score:    ^int,
-                    stats:    ^Damage_Stats,
-                    proc_type: relic.Proc_Type,
-                    hook:      proc(p: ^platform.Platform, g: ^Game, score: ^int),
-                ) {
-                    stats.potential_damage_done   += score^
-                    stats.potential_highest_damage = max(stats.potential_highest_damage, score^)
-
-                    proc_relics_by_type(p, g, proc_type, { damage = score })
-                    hook               (p, g, score)
-
-                    stats.damage_done   += score^
-                    stats.highest_damage = max(stats.highest_damage, score^)
-                }
-
-                // We should only apply the damage if the enemy is still alive
-                // This may seem pointless, but the enemy can kill itself. This
-                // saves the player from being hurt by dead enemies.
-                if enemy.health != 0 {
-                    switch g.entities.turn {
-                        case .Player: // We're hitting the enemey
-                            __compute_damage(
-                                p, g,
-                                &current.damage,
-                                &g.battle_stats.damage[.Player],
-                                .On_Enemy_Hit,
-                                ENEMY_HOOKS[stage.monster].on_take_damage,
-                            )
-
-                        case .Enemy: // We're being hit by the enemy
-                            __compute_damage(
-                                p, g,
-                                &current.damage,
-                                &g.battle_stats.damage[.Enemy],
-                                .On_Player_Hit,
-                                PLAYER_HOOKS[character].on_take_damage,
-                            )
-                    }
-
-                    other.health   = max(other.health - current.damage, 0)
-                    current.damage = 0
-                }
-
-                if enemy.health == 0 {
-                    g.state = .Camp_Fire
-                }
-
-                // Apply poison damage if the enemey is not dead
-                if enemy.health != 0 {
-                    poison_damage := int(bool(current.poison)) * 10 // Maybe relic for multiply?
+                    entity.advance_turn(&g.entities)
 
                     switch g.entities.turn {
-                        case .Player: // We're being poisoned
-                            __compute_damage(
-                                p, g,
-                                &poison_damage,
-                                &g.battle_stats.poison[.Enemy],
-                                .On_Player_Poisoned,
-                                PLAYER_HOOKS[character].on_take_poison,
-                            )
-
-                        case .Enemy: // We're being hit by the enemy
-                            __compute_damage(
-                                p, g,
-                                &poison_damage,
-                                &g.battle_stats.poison[.Player],
-                                .On_Enemy_Poisoned,
-                                ENEMY_HOOKS[stage.monster].on_take_poison,
-                            )
+                        case .Player: PLAYER_HOOKS[character    ].on_turn_start(p, g)
+                        case .Enemy:   ENEMY_HOOKS[stage.monster].on_turn_start(p, g)
                     }
-
-                    current.health = max(current.health - poison_damage, 0)
-                    current.poison = max(current.poison - 1,             0)
                 }
 
-                if enemy.health == 0 {
-                    g.state = .Camp_Fire
+                // If the ball's physics body has gone to sleep then it has got stuck
+                // somewhere. We try to give it a little nudge, and increase the power
+                // incase it didn't make it out.
+                if !box2d.Body_IsAwake(ball.body_id) {
+                    box2d.Body_SetLinearVelocity(ball.body_id, ball.escape_vector * ball.escape_speed)
+                    box2d.Body_SetAwake         (ball.body_id, true)
+
+                    ball.escape_speed    *=  1.2
+                    ball.escape_vector.x *= -1.0
                 }
-
-                switch g.entities.turn {
-                    case .Player: PLAYER_HOOKS[character    ].on_turn_end(p, g)
-                    case .Enemy:   ENEMY_HOOKS[stage.monster].on_turn_end(p, g)
-                }
-
-                entity.advance_turn(&g.entities)
-
-                switch g.entities.turn {
-                    case .Player: PLAYER_HOOKS[character    ].on_turn_start(p, g)
-                    case .Enemy:   ENEMY_HOOKS[stage.monster].on_turn_start(p, g)
-                }
-            }
-
-            // If the ball's physics body has gone to sleep then it has got stuck
-            // somewhere. We try to give it a little nudge, and increase the power
-            // incase it didn't make it out.
-            if !box2d.Body_IsAwake(g.ball.body_id) {
-                box2d.Body_SetLinearVelocity(g.ball.body_id, g.ball_escape_vector * g.ball_escape_speed)
-                box2d.Body_SetAwake         (g.ball.body_id, true)
-
-                g.ball_escape_speed    *=  1.2
-                g.ball_escape_vector.x *= -1.0
             }
     }
 
@@ -1221,7 +1228,9 @@ do_post_game :: proc(p: ^platform.Platform, g: ^Game) {
 
 hit_block :: proc(p: ^platform.Platform, g: ^Game, block: ^^wizard.Spell_Block) {
     __hit_block :: proc(p: ^platform.Platform, g: ^Game, block: ^^wizard.Spell_Block) {
-        ball_info := BALL_INFO[g.ball.type]
+        // TODO: "It'll be extremely obvious, when we have a different ball and it doesnt do anything"
+        // - Hector
+        ball_info := BALL_INFO[.Basic]
 
         current := entity.current(&g.entities)
           other := entity.other  (&g.entities)
@@ -1409,9 +1418,11 @@ BALL_INFO := [Ball_Type]Ball_Info {
 }
 
 Ball :: struct {
-    type:     Ball_Type,
-    body_id:  box2d.BodyId,
-    shape_id: box2d.ShapeId,
+    escape_vector: glsl.vec2,
+    escape_speed:  f32,
+    type:          Ball_Type,
+    body_id:       box2d.BodyId,
+    shape_id:      box2d.ShapeId,
 }
 
 create_ball :: proc(world_id: box2d.WorldId, position, velocity: glsl.vec2, type: Ball_Type) -> Ball {
@@ -1436,5 +1447,8 @@ create_ball :: proc(world_id: box2d.WorldId, position, velocity: glsl.vec2, type
     body_id  := box2d.CreateBody(world_id, body_def)
     shape_id := box2d.CreateCircleShape(body_id, shape_def, circle)
 
-    return { type, body_id, shape_id }
+    escape_vector := glsl.vec2{ 1, -1 }
+    escape_speed  := f32(1.0)
+
+    return { escape_vector, escape_speed, type, body_id, shape_id }
 }
