@@ -612,7 +612,7 @@ do_character_select :: proc(p: ^platform.Platform, g: ^Game) {
             relic.add(&g.relics, .Harden_Blocks)
 
             for &block in entity.arena.blocks {
-                proc_relics_by_type(p, g, .On_Player_Block_Restored, { block = &block })
+                proc_relics(p, g, .On_Player_Block_Restored, { block = &block })
             }
 
             g.state = .Adventure_Select
@@ -637,7 +637,7 @@ begin_next_stage :: proc(p: ^platform.Platform, g: ^Game) {
     }
 
     for &block in entity.arena.blocks {
-        proc_relics_by_type(p, g, .On_Enemy_Block_Restored, { block = &block })
+        proc_relics(p, g, .On_Enemy_Block_Restored, { block = &block })
     }
 
     fmt.printfln("%#v", g.battle_stats)
@@ -701,10 +701,7 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                 character := g.player.stats.character
                 stage     := adventure.stage(&g.adventure)
 
-                switch g.entities.turn {
-                    case .Player: PLAYER_HOOKS[character    ].on_shoot_ball(p, g)
-                    case .Enemy:   ENEMY_HOOKS[stage.monster].on_shoot_ball(p, g)
-                }
+                proc_character(p, g, .On_Shoot_Ball, {})
 
                 g.ball_state = .Flying_About_The_Place
             }
@@ -722,8 +719,8 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                 )
 
                 ball_position := box2d.Body_GetPosition      (ball.body_id)
-                ball_velocity  := box2d.Body_GetLinearVelocity(ball.body_id)
-                ball_speed     := glsl.length(ball_velocity)
+                ball_velocity := box2d.Body_GetLinearVelocity(ball.body_id)
+                ball_speed    := glsl.length(ball_velocity)
 
                 g.particle_spawn_time += p.delta_seconds
 
@@ -759,15 +756,13 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                     // TODO: when all the balls have dropped, hee speaks like _this_: give me the l oh oops.
                     g.ball_state = .Picking_A_Spot
 
-                    current   := entity.current(&g.entities)
-                    other     := entity.other  (&g.entities)
-                    enemy     := entity.enemy  (&g.entities)
-                    character := g.player.stats.character
-                    stage     := adventure.stage(&g.adventure)
+                    current := entity.current(&g.entities)
+                    other   := entity.other  (&g.entities)
+                    enemy   := entity.enemy  (&g.entities)
 
                     if current.arena.disabled == len(current.arena.blocks) {
                         elements:  wizard.Elements
-                        proc_type: relic.Proc_Type
+                        proc_type: Relic_Proc_Type
 
                         switch g.entities.turn {
                             case .Player:
@@ -782,7 +777,7 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                         wizard.restore_spell_arena(&current.arena, elements)
 
                         for &block in current.arena.blocks {
-                            proc_relics_by_type(p, g, proc_type, { block = &block })
+                            proc_relics(p, g, proc_type, { block = &block })
                         }
                     }
 
@@ -791,14 +786,17 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                         g:        ^Game,
                         score:    ^int,
                         stats:    ^Damage_Stats,
-                        proc_type: relic.Proc_Type,
-                        hook:      proc(p: ^platform.Platform, g: ^Game, score: ^int),
+                        proc_type: Relic_Proc_Type,
+                        hook:      Character_Hook,
                     ) {
                         stats.potential_damage_done   += score^
                         stats.potential_highest_damage = max(stats.potential_highest_damage, score^)
 
-                        proc_relics_by_type(p, g, proc_type, { damage = score })
-                        hook               (p, g, score)
+                        proc_relics(p, g, proc_type, { damage = score })
+
+                        if hook != nil {
+                            hook(p, g, { damage = score })
+                        }
 
                         stats.damage_done   += score^
                         stats.highest_damage = max(stats.highest_damage, score^)
@@ -815,7 +813,7 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                                     &current.damage,
                                     &g.battle_stats.damage[.Player],
                                     .On_Enemy_Hit,
-                                    ENEMY_HOOKS[stage.monster].on_take_damage,
+                                    monster_hook(g, .On_Take_Damage),
                                 )
 
                             case .Enemy: // We're being hit by the enemy
@@ -824,7 +822,7 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                                     &current.damage,
                                     &g.battle_stats.damage[.Enemy],
                                     .On_Player_Hit,
-                                    PLAYER_HOOKS[character].on_take_damage,
+                                    player_hook(g, .On_Take_Damage),
                                 )
                         }
 
@@ -847,7 +845,7 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                                     &poison_damage,
                                     &g.battle_stats.poison[.Enemy],
                                     .On_Player_Poisoned,
-                                    PLAYER_HOOKS[character].on_take_poison,
+                                    player_hook(g, .On_Take_Poison),
                                 )
 
                             case .Enemy: // We're being hit by the enemy
@@ -856,7 +854,7 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                                     &poison_damage,
                                     &g.battle_stats.poison[.Player],
                                     .On_Enemy_Poisoned,
-                                    ENEMY_HOOKS[stage.monster].on_take_poison,
+                                    monster_hook(g, .On_Take_Poison),
                                 )
                         }
 
@@ -868,17 +866,9 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
                         g.state = .Camp_Fire
                     }
 
-                    switch g.entities.turn {
-                        case .Player: PLAYER_HOOKS[character    ].on_turn_end(p, g)
-                        case .Enemy:   ENEMY_HOOKS[stage.monster].on_turn_end(p, g)
-                    }
-
+                    proc_character(p, g, .On_Turn_End, {})
                     entity.advance_turn(&g.entities)
-
-                    switch g.entities.turn {
-                        case .Player: PLAYER_HOOKS[character    ].on_turn_start(p, g)
-                        case .Enemy:   ENEMY_HOOKS[stage.monster].on_turn_start(p, g)
-                    }
+                    proc_character(p, g, .On_Turn_Start, {})
                 }
 
                 // If the ball's physics body has gone to sleep then it has got stuck
@@ -1031,14 +1021,17 @@ do_battle :: proc(p: ^platform.Platform, g: ^Game) {
     events := box2d.World_GetContactEvents(g.world_id)
 
     for i: i32 = 0; i < events.hitCount; i += 1 {
-        event     := events.hitEvents[i]
-        user_data := box2d.Shape_GetUserData(event.shapeIdA)
+        event      := events.hitEvents[i]
+        block_data := box2d.Shape_GetUserData(event.shapeIdA)
+         ball_data := box2d.Shape_GetUserData(event.shapeIdB)
 
-        if user_data == nil {
+        if block_data == nil {
             platform.play_sound(g.sounds.hit_wall)
         } else {
-            block := cast(^wizard.Spell_Block) user_data
-            hit_block(p, g, &block)
+            block := cast(^wizard.Spell_Block) block_data
+            ball  := cast(^Ball)                ball_data
+
+            hit_block(p, g, &block, ball)
         }
     }
 }
@@ -1161,7 +1154,7 @@ do_camp_fire :: proc(p: ^platform.Platform, g: ^Game) {
                 )
 
                 for &block in player_entity.arena.blocks {
-                    proc_relics_by_type(p, g, .On_Player_Block_Restored, { block = &block })
+                    proc_relics(p, g, .On_Player_Block_Restored, { block = &block })
                 }
 
                 g.have_setup_camp       = false
@@ -1250,7 +1243,7 @@ do_post_game :: proc(p: ^platform.Platform, g: ^Game) {
     g.state = .Title
 }
 
-hit_block :: proc(p: ^platform.Platform, g: ^Game, block: ^^wizard.Spell_Block) {
+hit_block :: proc(p: ^platform.Platform, g: ^Game, block: ^^wizard.Spell_Block, ball: ^Ball) {
     __hit_block :: proc(p: ^platform.Platform, g: ^Game, block: ^^wizard.Spell_Block) {
         // TODO: "It'll be extremely obvious, when we have a different ball and it doesnt do anything"
         // - Hector
@@ -1326,8 +1319,8 @@ hit_block :: proc(p: ^platform.Platform, g: ^Game, block: ^^wizard.Spell_Block) 
 
             for &block in enabled_blocks {
                 switch g.entities.turn {
-                    case .Player: proc_relics_by_type(p, g, .On_Player_Block_Restored, { block = block })
-                    case .Enemy:  proc_relics_by_type(p, g, .On_Enemy_Block_Restored,  { block = block })
+                    case .Player: proc_relics(p, g, .On_Player_Block_Restored, { block = block })
+                    case .Enemy:  proc_relics(p, g, .On_Enemy_Block_Restored,  { block = block })
                 }
             }
 
@@ -1349,12 +1342,8 @@ hit_block :: proc(p: ^platform.Platform, g: ^Game, block: ^^wizard.Spell_Block) 
     character := g.player.stats.character
     stage     := adventure.stage(&g.adventure)
 
-    switch g.entities.turn {
-        case .Player: PLAYER_HOOKS[character    ].on_block_hit(p, g, block^)
-        case .Enemy:   ENEMY_HOOKS[stage.monster].on_block_hit(p, g, block^)
-    }
-
-    proc_relics_by_type(p, g, .On_Block_Hit, { block = block^ })
+    proc_character(p, g, .On_Block_Hit, { block = block^ })
+    proc_relics   (p, g, .On_Block_Hit, { block = block^ })
 
     switch block^.status {
         case .None:
@@ -1420,8 +1409,6 @@ Ball_Info :: struct {
     name:   string,
     damage: int,
 
-    on_block_hit: proc(p: ^platform.Platform, g: ^Game, b: ^wizard.Spell_Block),
-
     size_in_pixels: f32,
     friction:       f32,
     restitution:    f32,
@@ -1433,7 +1420,7 @@ BALL_INFO := [Ball_Type]Ball_Info {
         name   = "Magic Missile",
         damage = 3,
 
-        on_block_hit = _nil_on_block_hit,
+        // on_block_hit = _nil_on_block_hit,
 
         size_in_pixels  = 16,
         friction        = 0.0,
@@ -1458,6 +1445,8 @@ create_ball :: proc(g: ^Game, position, velocity: glsl.vec2) {
     box2d.Body_SetTransform     (ball.body_id, position, box2d.Body_GetRotation(ball.body_id))
     box2d.Body_SetLinearVelocity(ball.body_id, velocity)
     box2d.Body_Enable           (ball.body_id)
+
+    box2d.Shape_SetUserData(ball.shape_id, ball)
 
     ball.escape_vector = { 1, -1 }
     ball.escape_speed  = f32(1.0)

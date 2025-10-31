@@ -1,19 +1,7 @@
 package relic
 
-Proc_Type :: enum {
-    On_Block_Hit,
-    On_Enemy_Block_Restored,
-    On_Enemy_Hit,
-    On_Enemy_Poisoned,
-    On_Player_Block_Restored,
-    On_Player_Rest,
-    On_Player_Hit,
-    On_Player_Poisoned,
-}
-
 Relic_Class :: struct {
     state:      Relic_State,
-    proc_types: bit_set[Proc_Type],
     proc_count: int,
 }
 
@@ -82,25 +70,21 @@ Harden_Blocks :: struct {
 RELICS := [Relic]Relic_Class {
     .Split_Diminish = {
         state      = Split_Diminish { split_count = 3 },
-        proc_types = { .On_Block_Hit },
         proc_count = 1,
     },
 
     .Protective_Aura = {
         state      = Protective_Aura { strength = 50 },
-        proc_types = { .On_Player_Rest, .On_Player_Hit },
         proc_count = 1,
     },
 
     .Harden_Blocks = {
         state      = Harden_Blocks { extra_hits = 2 },
-        proc_types = { .On_Player_Block_Restored },
         proc_count = 1,
     },
 
     .Weaken_Blocks = {
         state      = nil,
-        proc_types = { .On_Enemy_Block_Restored },
         proc_count = 1,
     },
 }

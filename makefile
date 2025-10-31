@@ -4,9 +4,16 @@ run: build
 	./mmm
 
 build:
-	~/git/Odin/odin build ./src \
+	~/git/Odin/odin build ./src	\
 		-out:mmm				\
-		-collection:game=./src  \
+		-collection:game=./src	\
+		-debug
+
+build-darwin-amd64:
+	~/git/Odin/odin build ./src	\
+		-out:mmm				\
+		-collection:game=./src	\
+		-target:darwin_amd64	\
 		-debug
 
 run-ld: build-ld
